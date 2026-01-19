@@ -1,0 +1,120 @@
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from datetime import datetime, timedelta, timezone
+from app.database import get_db
+from app.models.trade import Trade, CacheMetadata, TradeResponse, TradesListResponse
+from app.services.subgraph import fetch_trades_from_subgraph
+from app.utils.address import parse_address_input, is_valid_address
+
+router = APIRouter()
+
+CACHE_TTL_MINUTES = 5
+
+
+@router.get("/trades/{address_or_url:path}", response_model=TradesListResponse)
+async def get_trades(
+    address_or_url: str,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    db: AsyncSession = Depends(get_db)
+):
+    address = parse_address_input(address_or_url)
+
+    if not is_valid_address(address):
+        raise HTTPException(status_code=400, detail={
+            "code": "INVALID_ADDRESS",
+            "message": "The provided address is not a valid Ethereum address"
+        })
+
+    address = address.lower()
+
+    cache_result = await db.execute(
+        select(CacheMetadata).where(CacheMetadata.wallet_address == address)
+    )
+    cache_meta = cache_result.scalar_one_or_none()
+
+    now = datetime.now(timezone.utc)
+    should_refresh = (
+        cache_meta is None or
+        (now - cache_meta.last_fetched) > timedelta(minutes=CACHE_TTL_MINUTES)
+    )
+
+    if should_refresh:
+        try:
+            new_trades = await fetch_trades_from_subgraph(address)
+
+            for trade_data in new_trades:
+                existing = await db.execute(
+                    select(Trade).where(Trade.tx_hash == trade_data["tx_hash"])
+                )
+                if existing.scalar_one_or_none() is None:
+                    trade = Trade(
+                        tx_hash=trade_data["tx_hash"],
+                        wallet_address=address,
+                        timestamp=trade_data["timestamp"],
+                        market_id=trade_data.get("market_id"),
+                        market_title=trade_data.get("market_title"),
+                        outcome=trade_data.get("outcome"),
+                        side=trade_data.get("side"),
+                        amount=trade_data.get("amount"),
+                        price=trade_data.get("price"),
+                        token_id=trade_data.get("token_id"),
+                        block_number=trade_data.get("block_number"),
+                    )
+                    db.add(trade)
+
+            if cache_meta:
+                cache_meta.last_fetched = now
+            else:
+                cache_meta = CacheMetadata(
+                    wallet_address=address,
+                    last_fetched=now
+                )
+                db.add(cache_meta)
+
+            await db.commit()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail={
+                "code": "SUBGRAPH_ERROR",
+                "message": f"Failed to fetch trades: {str(e)}"
+            })
+
+    count_result = await db.execute(
+        select(func.count()).select_from(Trade).where(Trade.wallet_address == address)
+    )
+    total_count = count_result.scalar()
+
+    offset = (page - 1) * limit
+    trades_result = await db.execute(
+        select(Trade)
+        .where(Trade.wallet_address == address)
+        .order_by(Trade.timestamp.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    trades = trades_result.scalars().all()
+
+    trade_responses = [
+        TradeResponse(
+            tx_hash=t.tx_hash,
+            timestamp=t.timestamp,
+            market_id=t.market_id,
+            market_title=t.market_title,
+            outcome=t.outcome,
+            side=t.side,
+            amount=str(t.amount) if t.amount else None,
+            price=str(t.price) if t.price else None,
+            token_id=t.token_id,
+            polygonscan_url=f"https://polygonscan.com/tx/{t.tx_hash}"
+        )
+        for t in trades
+    ]
+
+    return TradesListResponse(
+        address=address,
+        trades=trade_responses,
+        total_count=total_count,
+        page=page,
+        limit=limit
+    )
