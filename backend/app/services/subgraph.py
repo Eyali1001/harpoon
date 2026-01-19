@@ -92,6 +92,7 @@ query GetActivity($user: String!, $first: Int!, $skip: Int!) {
 
 async def fetch_single_market_by_token(client: httpx.AsyncClient, token_id: str) -> tuple[str, dict | None]:
     """Fetch market info for a single token ID."""
+    import json
     try:
         response = await client.get(
             f"{settings.gamma_api_url}/markets",
@@ -103,12 +104,22 @@ async def fetch_single_market_by_token(client: httpx.AsyncClient, token_id: str)
             if markets:
                 market = markets[0]
                 # Determine which outcome this token represents
+                # outcomes and clobTokenIds are JSON strings like '["Yes", "No"]'
                 outcome = None
-                tokens = market.get("tokens", [])
-                for tok in tokens:
-                    if tok.get("token_id") == token_id:
-                        outcome = tok.get("outcome")
-                        break
+                try:
+                    outcomes_str = market.get("outcomes", "[]")
+                    token_ids_str = market.get("clobTokenIds", "[]")
+                    outcomes_list = json.loads(outcomes_str) if isinstance(outcomes_str, str) else outcomes_str
+                    token_ids_list = json.loads(token_ids_str) if isinstance(token_ids_str, str) else token_ids_str
+
+                    # Find the index of our token_id and get corresponding outcome
+                    if token_id in token_ids_list:
+                        idx = token_ids_list.index(token_id)
+                        if idx < len(outcomes_list):
+                            outcome = outcomes_list[idx]
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
                 return token_id, {
                     "question": market.get("question"),
                     "outcomes": market.get("outcomes"),
