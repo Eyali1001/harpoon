@@ -165,7 +165,7 @@ async def fetch_market_info(client: httpx.AsyncClient, token_ids: list[str]) -> 
             return await fetch_single_market_by_token(client, tid)
 
     # Fetch all in parallel with rate limiting
-    results = await asyncio.gather(*[fetch_with_semaphore(tid) for tid in token_ids[:50]])  # Limit to 50
+    results = await asyncio.gather(*[fetch_with_semaphore(tid) for tid in token_ids])
 
     for tid, info in results:
         if info:
@@ -187,7 +187,7 @@ async def fetch_market_info_by_condition(client: httpx.AsyncClient, condition_id
             return await fetch_single_market_by_condition(client, cid)
 
     # Fetch all in parallel with rate limiting
-    results = await asyncio.gather(*[fetch_with_semaphore(cid) for cid in condition_ids[:50]])  # Limit to 50
+    results = await asyncio.gather(*[fetch_with_semaphore(cid) for cid in condition_ids])
 
     for cid, info in results:
         if info:
