@@ -37,10 +37,13 @@ async def get_trades(
     cache_meta = cache_result.scalar_one_or_none()
 
     now = datetime.now(timezone.utc)
-    should_refresh = (
-        cache_meta is None or
-        (now - cache_meta.last_fetched) > timedelta(minutes=CACHE_TTL_MINUTES)
-    )
+    should_refresh = cache_meta is None
+    if cache_meta is not None:
+        # Handle both timezone-aware and naive datetimes (SQLite vs PostgreSQL)
+        last_fetched = cache_meta.last_fetched
+        if last_fetched.tzinfo is None:
+            last_fetched = last_fetched.replace(tzinfo=timezone.utc)
+        should_refresh = (now - last_fetched) > timedelta(minutes=CACHE_TTL_MINUTES)
 
     if should_refresh:
         try:
