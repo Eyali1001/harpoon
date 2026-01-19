@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from datetime import datetime, timedelta, timezone
 from app.database import get_db
-from app.models.trade import Trade, CacheMetadata, TradeResponse, TradesListResponse, ProfileInfo
+from app.models.trade import Trade, CacheMetadata, TradeResponse, TradesListResponse, ProfileInfo, TimezoneAnalysis
 from app.services.subgraph import fetch_trades_from_subgraph
 from app.services.profile import resolve_profile_to_address, fetch_public_profile
 from app.utils.address import is_valid_address
@@ -11,6 +11,101 @@ from app.utils.address import is_valid_address
 router = APIRouter()
 
 CACHE_TTL_MINUTES = 5
+
+# Common timezones with their UTC offsets and typical names
+TIMEZONE_MAP = [
+    (-12, "Baker Island"),
+    (-11, "American Samoa"),
+    (-10, "Hawaii"),
+    (-9, "Alaska"),
+    (-8, "US Pacific"),
+    (-7, "US Mountain"),
+    (-6, "US Central"),
+    (-5, "US Eastern"),
+    (-4, "Atlantic"),
+    (-3, "Brazil/Argentina"),
+    (-2, "Mid-Atlantic"),
+    (-1, "Azores"),
+    (0, "UK/Portugal"),
+    (1, "Central Europe"),
+    (2, "Eastern Europe"),
+    (3, "Moscow/Arabia"),
+    (4, "Gulf/Caucasus"),
+    (5, "Pakistan/West Asia"),
+    (5.5, "India"),
+    (6, "Bangladesh"),
+    (7, "Indochina"),
+    (8, "China/Singapore"),
+    (9, "Japan/Korea"),
+    (10, "Australia East"),
+    (11, "Pacific Islands"),
+    (12, "New Zealand"),
+]
+
+
+def calculate_timezone_analysis(timestamps: list[datetime]) -> TimezoneAnalysis:
+    """Calculate hourly distribution and infer timezone from trade timestamps."""
+    if not timestamps:
+        return TimezoneAnalysis(
+            hourly_distribution=[0] * 24,
+            inferred_timezone=None,
+            inferred_utc_offset=None,
+            activity_center_utc=None
+        )
+
+    # Calculate hourly distribution (UTC)
+    hourly_counts = [0] * 24
+    for ts in timestamps:
+        hour = ts.hour
+        hourly_counts[hour] += 1
+
+    # Calculate activity center (weighted circular mean for hours)
+    # Using circular statistics to handle the 23->0 wrap-around
+    import math
+    total_weight = sum(hourly_counts)
+    if total_weight == 0:
+        return TimezoneAnalysis(
+            hourly_distribution=hourly_counts,
+            inferred_timezone=None,
+            inferred_utc_offset=None,
+            activity_center_utc=None
+        )
+
+    sin_sum = 0
+    cos_sum = 0
+    for hour, count in enumerate(hourly_counts):
+        angle = 2 * math.pi * hour / 24
+        sin_sum += count * math.sin(angle)
+        cos_sum += count * math.cos(angle)
+
+    avg_angle = math.atan2(sin_sum, cos_sum)
+    if avg_angle < 0:
+        avg_angle += 2 * math.pi
+    activity_center_utc = (avg_angle * 24) / (2 * math.pi)
+
+    # Infer timezone: assume activity center should be around 3pm local (15:00)
+    # So UTC offset = 15 - activity_center_utc
+    target_local_hour = 15  # 3pm - middle of typical active day
+    utc_offset = target_local_hour - activity_center_utc
+
+    # Normalize to -12 to +12 range
+    if utc_offset > 12:
+        utc_offset -= 24
+    elif utc_offset < -12:
+        utc_offset += 24
+
+    # Round to nearest half hour for timezone matching
+    utc_offset_rounded = round(utc_offset * 2) / 2
+
+    # Find closest timezone
+    closest_tz = min(TIMEZONE_MAP, key=lambda tz: abs(tz[0] - utc_offset_rounded))
+
+    return TimezoneAnalysis(
+        hourly_distribution=hourly_counts,
+        inferred_timezone=closest_tz[1],
+        inferred_utc_offset=int(closest_tz[0]) if closest_tz[0] == int(closest_tz[0]) else closest_tz[0],
+        activity_center_utc=round(activity_center_utc, 1)
+    )
 
 
 @router.get("/trades/{address_or_url:path}", response_model=TradesListResponse)
@@ -130,12 +225,15 @@ async def get_trades(
 
     # Calculate total earnings: (sells + redeems) - buys
     all_trades_result = await db.execute(
-        select(Trade.side, Trade.amount).where(Trade.wallet_address == address)
+        select(Trade.side, Trade.amount, Trade.timestamp).where(Trade.wallet_address == address)
     )
     all_trades_data = all_trades_result.all()
 
     total_earnings = 0.0
-    for side, amount in all_trades_data:
+    timestamps = []
+    for side, amount, timestamp in all_trades_data:
+        if timestamp:
+            timestamps.append(timestamp)
         if amount is None:
             continue
         amt = float(amount)
@@ -144,6 +242,9 @@ async def get_trades(
         elif side in ("sell", "redeem"):
             total_earnings += amt
 
+    # Calculate timezone analysis
+    tz_analysis = calculate_timezone_analysis(timestamps)
+
     return TradesListResponse(
         address=address,
         profile=profile_info,
@@ -151,5 +252,6 @@ async def get_trades(
         total_count=total_count,
         page=page,
         limit=limit,
-        total_earnings=f"{total_earnings:.2f}"
+        total_earnings=f"{total_earnings:.2f}",
+        timezone_analysis=tz_analysis
     )

@@ -19,6 +19,13 @@ export interface ProfileInfo {
   profile_url: string | null
 }
 
+export interface TimezoneAnalysis {
+  hourly_distribution: number[]
+  inferred_timezone: string | null
+  inferred_utc_offset: number | null
+  activity_center_utc: number | null
+}
+
 export interface TradesResponse {
   address: string
   profile: ProfileInfo | null
@@ -27,4 +34,5 @@ export interface TradesResponse {
   page: number
   limit: number
   total_earnings: string | null
+  timezone_analysis: TimezoneAnalysis | null
 }

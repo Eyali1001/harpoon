@@ -56,6 +56,13 @@ class ProfileInfo(BaseModel):
     profile_url: str | None
 
 
+class TimezoneAnalysis(BaseModel):
+    hourly_distribution: list[int]
+    inferred_timezone: str | None
+    inferred_utc_offset: int | None
+    activity_center_utc: float | None
+
+
 class TradesListResponse(BaseModel):
     address: str
     profile: ProfileInfo | None
@@ -64,3 +71,4 @@ class TradesListResponse(BaseModel):
     page: int
     limit: int
     total_earnings: str | None
+    timezone_analysis: TimezoneAnalysis | None

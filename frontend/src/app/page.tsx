@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import SearchInput from '@/components/SearchInput'
 import TradeTable from '@/components/TradeTable'
+import ActivityHistogram from '@/components/ActivityHistogram'
 import { fetchTrades } from '@/lib/api'
-import type { Trade, ProfileInfo } from '@/types/trade'
+import type { Trade, ProfileInfo, TimezoneAnalysis } from '@/types/trade'
 
 export default function Home() {
   const [trades, setTrades] = useState<Trade[]>([])
@@ -15,6 +16,7 @@ export default function Home() {
   const [totalCount, setTotalCount] = useState(0)
   const [page, setPage] = useState(1)
   const [totalEarnings, setTotalEarnings] = useState<string | null>(null)
+  const [timezoneAnalysis, setTimezoneAnalysis] = useState<TimezoneAnalysis | null>(null)
 
   const handleSearch = async (input: string) => {
     setLoading(true)
@@ -22,6 +24,7 @@ export default function Home() {
     setPage(1)
     setProfile(null)
     setTotalEarnings(null)
+    setTimezoneAnalysis(null)
 
     try {
       const response = await fetchTrades(input, 1)
@@ -30,6 +33,7 @@ export default function Home() {
       setProfile(response.profile)
       setTotalCount(response.total_count)
       setTotalEarnings(response.total_earnings)
+      setTimezoneAnalysis(response.timezone_analysis)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch trades')
       setTrades([])
@@ -127,6 +131,10 @@ export default function Home() {
                 )}
               </div>
             </div>
+
+            {timezoneAnalysis && (
+              <ActivityHistogram analysis={timezoneAnalysis} />
+            )}
           </div>
 
           <TradeTable trades={trades} loading={loading} />
