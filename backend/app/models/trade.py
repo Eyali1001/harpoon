@@ -63,3 +63,4 @@ class TradesListResponse(BaseModel):
     total_count: int
     page: int
     limit: int
+    total_earnings: str | None

@@ -39,10 +39,14 @@ function truncateMarketTitle(title: string | null): string {
 }
 
 export default function TradeRow({ trade }: TradeRowProps) {
+  const isRedeem = trade.side === 'redeem'
+
   const sideClass = trade.side === 'buy'
     ? 'text-green-700'
     : trade.side === 'sell'
     ? 'text-red-700'
+    : trade.side === 'redeem'
+    ? 'text-blue-700'
     : ''
 
   const outcomeClass = trade.outcome?.toLowerCase() === 'yes'
@@ -52,7 +56,7 @@ export default function TradeRow({ trade }: TradeRowProps) {
     : ''
 
   return (
-    <tr className="border-b border-beige-border hover:bg-beige-dark transition-colors">
+    <tr className={`border-b border-beige-border hover:bg-beige-dark transition-colors ${isRedeem ? 'bg-green-50' : ''}`}>
       <td className="py-3 pr-4 whitespace-nowrap text-ink-muted">
         {formatTimestamp(trade.timestamp)}
       </td>
@@ -69,7 +73,11 @@ export default function TradeRow({ trade }: TradeRowProps) {
         ${formatAmount(trade.amount)}
       </td>
       <td className="py-3 pr-4 text-right tabular-nums">
-        {formatPrice(trade.price)}
+        {isRedeem ? (
+          <span className="text-green-700 font-medium">+${formatAmount(trade.amount)}</span>
+        ) : (
+          formatPrice(trade.price)
+        )}
       </td>
       <td className="py-3 text-right">
         <a

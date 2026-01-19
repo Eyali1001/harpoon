@@ -128,11 +128,28 @@ async def get_trades(
             profile_url=profile_data.get("profile_url"),
         )
 
+    # Calculate total earnings: (sells + redeems) - buys
+    all_trades_result = await db.execute(
+        select(Trade.side, Trade.amount).where(Trade.wallet_address == address)
+    )
+    all_trades_data = all_trades_result.all()
+
+    total_earnings = 0.0
+    for side, amount in all_trades_data:
+        if amount is None:
+            continue
+        amt = float(amount)
+        if side == "buy":
+            total_earnings -= amt
+        elif side in ("sell", "redeem"):
+            total_earnings += amt
+
     return TradesListResponse(
         address=address,
         profile=profile_info,
         trades=trade_responses,
         total_count=total_count,
         page=page,
-        limit=limit
+        limit=limit,
+        total_earnings=f"{total_earnings:.2f}"
     )

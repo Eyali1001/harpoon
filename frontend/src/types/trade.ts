@@ -26,4 +26,5 @@ export interface TradesResponse {
   total_count: number
   page: number
   limit: number
+  total_earnings: string | null
 }

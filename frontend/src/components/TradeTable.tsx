@@ -33,7 +33,7 @@ export default function TradeTable({ trades, loading }: TradeTableProps) {
             <th className="text-left py-3 pr-4 font-medium">Side</th>
             <th className="text-left py-3 pr-4 font-medium">Outcome</th>
             <th className="text-right py-3 pr-4 font-medium">Amount</th>
-            <th className="text-right py-3 pr-4 font-medium">Price</th>
+            <th className="text-right py-3 pr-4 font-medium">Price/Payout</th>
             <th className="text-right py-3 font-medium">Details</th>
           </tr>
         </thead>

@@ -14,12 +14,14 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null)
   const [totalCount, setTotalCount] = useState(0)
   const [page, setPage] = useState(1)
+  const [totalEarnings, setTotalEarnings] = useState<string | null>(null)
 
   const handleSearch = async (input: string) => {
     setLoading(true)
     setError(null)
     setPage(1)
     setProfile(null)
+    setTotalEarnings(null)
 
     try {
       const response = await fetchTrades(input, 1)
@@ -27,6 +29,7 @@ export default function Home() {
       setAddress(response.address)
       setProfile(response.profile)
       setTotalCount(response.total_count)
+      setTotalEarnings(response.total_earnings)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch trades')
       setTrades([])
@@ -115,6 +118,13 @@ export default function Home() {
                 <p className="text-sm font-mono text-ink-muted mt-1">
                   {totalCount} trade{totalCount !== 1 ? 's' : ''}
                 </p>
+                {totalEarnings && (
+                  <p className={`text-lg font-mono font-medium mt-2 ${
+                    parseFloat(totalEarnings) >= 0 ? 'text-green-700' : 'text-red-700'
+                  }`}>
+                    Total Earnings: {parseFloat(totalEarnings) >= 0 ? '+' : ''}${parseFloat(totalEarnings).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                )}
               </div>
             </div>
           </div>
