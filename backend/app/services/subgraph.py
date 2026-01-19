@@ -58,7 +58,7 @@ query GetActivity($user: String!, $first: Int!, $skip: Int!) {
     timestamp
     stakeholder
     amount
-    condition { id }
+    condition
   }
   merges(
     where: { stakeholder: $user }
@@ -71,7 +71,7 @@ query GetActivity($user: String!, $first: Int!, $skip: Int!) {
     timestamp
     stakeholder
     amount
-    condition { id }
+    condition
   }
   redemptions(
     where: { redeemer: $user }
@@ -84,73 +84,95 @@ query GetActivity($user: String!, $first: Int!, $skip: Int!) {
     timestamp
     redeemer
     payout
-    condition { id }
+    condition
   }
 }
 """
 
 
+async def fetch_single_market_by_token(client: httpx.AsyncClient, token_id: str) -> tuple[str, dict | None]:
+    """Fetch market info for a single token ID."""
+    try:
+        response = await client.get(
+            f"{settings.gamma_api_url}/markets",
+            params={"clob_token_ids": token_id},
+            timeout=10.0
+        )
+        if response.status_code == 200:
+            markets = response.json()
+            if markets:
+                market = markets[0]
+                return token_id, {
+                    "question": market.get("question"),
+                    "outcomes": market.get("outcomes"),
+                    "condition_id": market.get("conditionId")
+                }
+    except Exception:
+        pass
+    return token_id, None
+
+
+async def fetch_single_market_by_condition(client: httpx.AsyncClient, condition_id: str) -> tuple[str, dict | None]:
+    """Fetch market info for a single condition ID."""
+    try:
+        response = await client.get(
+            f"{settings.gamma_api_url}/markets",
+            params={"condition_ids": condition_id},
+            timeout=10.0
+        )
+        if response.status_code == 200:
+            markets = response.json()
+            if markets:
+                market = markets[0]
+                return condition_id, {
+                    "question": market.get("question"),
+                    "outcomes": market.get("outcomes")
+                }
+    except Exception:
+        pass
+    return condition_id, None
+
+
 async def fetch_market_info(client: httpx.AsyncClient, token_ids: list[str]) -> dict[str, dict]:
-    """Fetch market info from Gamma API by token IDs."""
+    """Fetch market info from Gamma API by token IDs (one at a time, concurrently)."""
+    import asyncio
     market_cache = {}
 
-    # Batch token IDs to avoid too-long URLs
-    batch_size = 10
-    for i in range(0, len(token_ids), batch_size):
-        batch = token_ids[i:i + batch_size]
-        ids_param = ",".join(batch)
+    # Limit concurrent requests
+    semaphore = asyncio.Semaphore(5)
 
-        try:
-            response = await client.get(
-                f"{settings.gamma_api_url}/markets",
-                params={"clob_token_ids": ids_param},
-                timeout=15.0
-            )
-            if response.status_code == 200:
-                markets = response.json()
-                for market in markets:
-                    clob_ids = market.get("clobTokenIds", "[]")
-                    if isinstance(clob_ids, str):
-                        import json
-                        clob_ids = json.loads(clob_ids)
-                    for tid in clob_ids:
-                        market_cache[tid] = {
-                            "question": market.get("question"),
-                            "outcomes": market.get("outcomes"),
-                            "condition_id": market.get("conditionId")
-                        }
-        except Exception:
-            pass
+    async def fetch_with_semaphore(tid):
+        async with semaphore:
+            return await fetch_single_market_by_token(client, tid)
+
+    # Fetch all in parallel with rate limiting
+    results = await asyncio.gather(*[fetch_with_semaphore(tid) for tid in token_ids[:50]])  # Limit to 50
+
+    for tid, info in results:
+        if info:
+            market_cache[tid] = info
 
     return market_cache
 
 
 async def fetch_market_info_by_condition(client: httpx.AsyncClient, condition_ids: list[str]) -> dict[str, dict]:
-    """Fetch market info from Gamma API by condition IDs."""
+    """Fetch market info from Gamma API by condition IDs (one at a time, concurrently)."""
+    import asyncio
     market_cache = {}
 
-    batch_size = 10
-    for i in range(0, len(condition_ids), batch_size):
-        batch = condition_ids[i:i + batch_size]
-        ids_param = ",".join(batch)
+    # Limit concurrent requests
+    semaphore = asyncio.Semaphore(5)
 
-        try:
-            response = await client.get(
-                f"{settings.gamma_api_url}/markets",
-                params={"condition_ids": ids_param},
-                timeout=15.0
-            )
-            if response.status_code == 200:
-                markets = response.json()
-                for market in markets:
-                    cid = market.get("conditionId")
-                    if cid:
-                        market_cache[cid] = {
-                            "question": market.get("question"),
-                            "outcomes": market.get("outcomes")
-                        }
-        except Exception:
-            pass
+    async def fetch_with_semaphore(cid):
+        async with semaphore:
+            return await fetch_single_market_by_condition(client, cid)
+
+    # Fetch all in parallel with rate limiting
+    results = await asyncio.gather(*[fetch_with_semaphore(cid) for cid in condition_ids[:50]])  # Limit to 50
+
+    for cid, info in results:
+        if info:
+            market_cache[cid] = info
 
     return market_cache
 
@@ -298,7 +320,7 @@ async def fetch_trades_from_subgraph(address: str) -> list[dict]:
                 timestamp = datetime.fromtimestamp(int(split["timestamp"]), tz=timezone.utc)
                 # ID format: txhash_logindex
                 tx_hash = split["id"].split("_")[0]
-                condition_id = split.get("condition", {}).get("id")
+                condition_id = split.get("condition")
                 amount = int(split["amount"]) / 1e6
 
                 if condition_id:
@@ -321,7 +343,7 @@ async def fetch_trades_from_subgraph(address: str) -> list[dict]:
             for merge in merges:
                 timestamp = datetime.fromtimestamp(int(merge["timestamp"]), tz=timezone.utc)
                 tx_hash = merge["id"].split("_")[0]
-                condition_id = merge.get("condition", {}).get("id")
+                condition_id = merge.get("condition")
                 amount = int(merge["amount"]) / 1e6
 
                 if condition_id:
@@ -344,7 +366,7 @@ async def fetch_trades_from_subgraph(address: str) -> list[dict]:
             for redemption in redemptions:
                 timestamp = datetime.fromtimestamp(int(redemption["timestamp"]), tz=timezone.utc)
                 tx_hash = redemption["id"].split("_")[0]
-                condition_id = redemption.get("condition", {}).get("id")
+                condition_id = redemption.get("condition")
                 payout = int(redemption["payout"]) / 1e6
 
                 if condition_id:
