@@ -25,6 +25,16 @@ const config: Config = {
         serif: ['Georgia', 'Times New Roman', 'serif'],
         mono: ['IBM Plex Mono', 'Courier New', 'monospace'],
       },
+      animation: {
+        'progress-bar': 'progress 1.5s ease-in-out infinite',
+      },
+      keyframes: {
+        progress: {
+          '0%': { transform: 'translateX(-100%)', width: '40%' },
+          '50%': { transform: 'translateX(50%)', width: '60%' },
+          '100%': { transform: 'translateX(250%)', width: '40%' },
+        },
+      },
     },
   },
   plugins: [],

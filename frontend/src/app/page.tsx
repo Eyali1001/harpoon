@@ -59,6 +59,12 @@ export default function Home() {
         <SearchInput onSearch={handleSearch} loading={loading} />
       </section>
 
+      {loading && (
+        <div className="w-full h-1 bg-beige-dark overflow-hidden">
+          <div className="h-full bg-ink animate-progress-bar" />
+        </div>
+      )}
+
       {error && (
         <div className="p-4 border border-red-300 bg-red-50 text-red-800 font-mono text-sm">
           {error}
