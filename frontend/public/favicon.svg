@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Minimalist harpoon/spear design -->
+  <path d="M16 2 L20 8 L17 8 L17 28 L15 28 L15 8 L12 8 Z" fill="#1A1A1A"/>
+  <!-- Barb on left -->
+  <path d="M15 12 L11 16 L15 14 Z" fill="#1A1A1A"/>
+  <!-- Barb on right -->
+  <path d="M17 12 L21 16 L17 14 Z" fill="#1A1A1A"/>
+</svg>

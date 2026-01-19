@@ -4,6 +4,9 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'Harpoon - Polymarket Trade Viewer',
   description: 'View all Polymarket trades for any wallet address',
+  icons: {
+    icon: '/favicon.svg',
+  },
 }
 
 export default function RootLayout({

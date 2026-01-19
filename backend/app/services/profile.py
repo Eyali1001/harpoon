@@ -1,18 +1,16 @@
-import httpx
 import re
-from app.config import get_settings
-
-settings = get_settings()
 
 
 async def resolve_profile_to_address(profile_input: str) -> str | None:
     """
-    Resolve a Polymarket profile URL or username to a wallet address.
+    Resolve input to a wallet address.
 
     Accepts:
     - Wallet address (0x...)
-    - Profile URL (https://polymarket.com/@username or https://polymarket.com/profile/username)
-    - Username (@username or just username)
+    - Profile URL with address (https://polymarket.com/profile/0x...)
+
+    Note: Username-based profile URLs (@username) are not supported as
+    Polymarket's API requires authentication for user lookups.
     """
     profile_input = profile_input.strip()
 
@@ -20,57 +18,16 @@ async def resolve_profile_to_address(profile_input: str) -> str | None:
     if re.match(r"^0x[a-fA-F0-9]{40}$", profile_input):
         return profile_input.lower()
 
-    # Extract username from URL or @mention
-    username = None
-
+    # Extract address from URL if present
     if "polymarket.com" in profile_input:
-        # URL format: https://polymarket.com/@username or /profile/username
-        match = re.search(r"polymarket\.com/(?:@|profile/)([^/?#]+)", profile_input)
+        # Look for address in URL: /profile/0x... or /@0x...
+        match = re.search(r"(?:profile/|@)(0x[a-fA-F0-9]{40})", profile_input, re.IGNORECASE)
         if match:
-            username = match.group(1)
-    elif profile_input.startswith("@"):
-        username = profile_input[1:]
-    else:
-        # Assume it's a username
-        username = profile_input
+            return match.group(1).lower()
 
-    if not username:
-        return None
-
-    # Fetch the profile page to extract the wallet address
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"https://polymarket.com/@{username}",
-                follow_redirects=True,
-                timeout=15.0,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (compatible; Harpoon/1.0)"
-                }
-            )
-
-            if response.status_code != 200:
-                return None
-
-            html = response.text
-
-            # Look for wallet address patterns in the HTML
-            # The page typically contains the proxy wallet address
-            address_patterns = [
-                r'"proxyWallet"\s*:\s*"(0x[a-fA-F0-9]{40})"',
-                r'"wallet"\s*:\s*"(0x[a-fA-F0-9]{40})"',
-                r'"address"\s*:\s*"(0x[a-fA-F0-9]{40})"',
-                r'0x[a-fA-F0-9]{40}',
-            ]
-
-            for pattern in address_patterns:
-                match = re.search(pattern, html)
-                if match:
-                    # Get the address (could be group(1) or group(0))
-                    addr = match.group(1) if match.lastindex else match.group(0)
-                    return addr.lower()
-
-    except Exception:
-        pass
+    # Check if the input itself looks like an address (case-insensitive)
+    if profile_input.lower().startswith("0x") and len(profile_input) == 42:
+        if re.match(r"^0x[a-fA-F0-9]{40}$", profile_input, re.IGNORECASE):
+            return profile_input.lower()
 
     return None

@@ -24,7 +24,7 @@ export default function SearchInput({ onSearch, loading }: SearchInputProps) {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Enter wallet address or Polymarket profile URL"
+          placeholder="Enter Polygon wallet address (0x...)"
           className="w-full px-0 py-3 bg-transparent border-0 border-b-2 border-ink font-mono text-base placeholder:text-ink-muted focus:outline-none focus:border-ink-light transition-colors"
           disabled={loading}
         />
