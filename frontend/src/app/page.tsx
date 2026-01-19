@@ -102,7 +102,7 @@ export default function Home() {
       {!address && !loading && !error && (
         <div className="text-center py-16">
           <p className="text-ink-muted font-mono text-sm">
-            Enter a Polymarket profile URL or Polygon wallet address to view trades
+            Enter a Polygon wallet address to view Polymarket trades
           </p>
         </div>
       )}
