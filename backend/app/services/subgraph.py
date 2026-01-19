@@ -102,10 +102,18 @@ async def fetch_single_market_by_token(client: httpx.AsyncClient, token_id: str)
             markets = response.json()
             if markets:
                 market = markets[0]
+                # Determine which outcome this token represents
+                outcome = None
+                tokens = market.get("tokens", [])
+                for tok in tokens:
+                    if tok.get("token_id") == token_id:
+                        outcome = tok.get("outcome")
+                        break
                 return token_id, {
                     "question": market.get("question"),
                     "outcomes": market.get("outcomes"),
-                    "condition_id": market.get("conditionId")
+                    "condition_id": market.get("conditionId"),
+                    "outcome": outcome
                 }
     except Exception:
         pass
@@ -283,6 +291,7 @@ async def fetch_trades_from_subgraph(address: str) -> list[dict]:
                     info = market_cache[trade["token_id"]]
                     trade["market_title"] = info.get("question")
                     trade["market_id"] = info.get("condition_id")
+                    trade["outcome"] = info.get("outcome")
 
         # Fetch activity (splits, merges, redemptions)
         skip = 0

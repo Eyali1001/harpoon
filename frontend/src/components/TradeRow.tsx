@@ -45,6 +45,12 @@ export default function TradeRow({ trade }: TradeRowProps) {
     ? 'text-red-700'
     : ''
 
+  const outcomeClass = trade.outcome?.toLowerCase() === 'yes'
+    ? 'text-green-700'
+    : trade.outcome?.toLowerCase() === 'no'
+    ? 'text-red-700'
+    : ''
+
   return (
     <tr className="border-b border-beige-border hover:bg-beige-dark transition-colors">
       <td className="py-3 pr-4 whitespace-nowrap text-ink-muted">
@@ -56,7 +62,7 @@ export default function TradeRow({ trade }: TradeRowProps) {
       <td className={`py-3 pr-4 uppercase font-medium ${sideClass}`}>
         {trade.side || '-'}
       </td>
-      <td className="py-3 pr-4">
+      <td className={`py-3 pr-4 font-medium ${outcomeClass}`}>
         {trade.outcome || '-'}
       </td>
       <td className="py-3 pr-4 text-right tabular-nums">
