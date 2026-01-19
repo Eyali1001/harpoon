@@ -1,4 +1,40 @@
 import re
+import httpx
+from app.config import get_settings
+
+settings = get_settings()
+
+
+async def fetch_public_profile(address: str) -> dict | None:
+    """
+    Fetch public profile info from Polymarket Gamma API.
+
+    Returns dict with: name, pseudonym, profileImage, bio, proxyWallet, profileUrl
+    """
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.gamma_api_url}/public-profile",
+                params={"address": address.lower()},
+                timeout=10.0
+            )
+            if response.status_code == 200:
+                data = response.json()
+                # Build profile URL using name or pseudonym
+                username = data.get("name") or data.get("pseudonym")
+                profile_url = f"https://polymarket.com/@{username}" if username else None
+
+                return {
+                    "name": data.get("name"),
+                    "pseudonym": data.get("pseudonym"),
+                    "profile_image": data.get("profileImage"),
+                    "bio": data.get("bio"),
+                    "proxy_wallet": data.get("proxyWallet"),
+                    "profile_url": profile_url,
+                }
+    except Exception:
+        pass
+    return None
 
 
 async def resolve_profile_to_address(profile_input: str) -> str | None:

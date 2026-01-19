@@ -48,8 +48,17 @@ class TradeResponse(BaseModel):
         from_attributes = True
 
 
+class ProfileInfo(BaseModel):
+    name: str | None
+    pseudonym: str | None
+    profile_image: str | None
+    bio: str | None
+    profile_url: str | None
+
+
 class TradesListResponse(BaseModel):
     address: str
+    profile: ProfileInfo | None
     trades: list[TradeResponse]
     total_count: int
     page: int

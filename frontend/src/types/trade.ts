@@ -11,8 +11,17 @@ export interface Trade {
   polygonscan_url: string
 }
 
+export interface ProfileInfo {
+  name: string | null
+  pseudonym: string | null
+  profile_image: string | null
+  bio: string | null
+  profile_url: string | null
+}
+
 export interface TradesResponse {
   address: string
+  profile: ProfileInfo | null
   trades: Trade[]
   total_count: number
   page: number
