@@ -4,8 +4,13 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/harpoon"
-    polygon_rpc_url: str = "https://polygon-rpc.com"
-    subgraph_url: str = "https://api.thegraph.com/subgraphs/name/polymarket/polymarket-matic"
+
+    # Goldsky-hosted subgraphs
+    orders_subgraph_url: str = "https://api.goldsky.com/api/public/project_cl6mb8i9h0003e201j6li0diw/subgraphs/orderbook-subgraph/prod/gn"
+    activity_subgraph_url: str = "https://api.goldsky.com/api/public/project_cl6mb8i9h0003e201j6li0diw/subgraphs/activity-subgraph/0.0.4/gn"
+
+    # Gamma API for market metadata
+    gamma_api_url: str = "https://gamma-api.polymarket.com"
 
     class Config:
         env_file = ".env"

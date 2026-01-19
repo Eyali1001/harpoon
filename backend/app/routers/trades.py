@@ -5,7 +5,8 @@ from datetime import datetime, timedelta, timezone
 from app.database import get_db
 from app.models.trade import Trade, CacheMetadata, TradeResponse, TradesListResponse
 from app.services.subgraph import fetch_trades_from_subgraph
-from app.utils.address import parse_address_input, is_valid_address
+from app.services.profile import resolve_profile_to_address
+from app.utils.address import is_valid_address
 
 router = APIRouter()
 
@@ -19,12 +20,13 @@ async def get_trades(
     limit: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db)
 ):
-    address = parse_address_input(address_or_url)
+    # Resolve profile URL/username to wallet address
+    address = await resolve_profile_to_address(address_or_url)
 
-    if not is_valid_address(address):
+    if not address or not is_valid_address(address):
         raise HTTPException(status_code=400, detail={
             "code": "INVALID_ADDRESS",
-            "message": "The provided address is not a valid Ethereum address"
+            "message": "Could not resolve to a valid Ethereum address. Please provide a wallet address or valid Polymarket profile URL."
         })
 
     address = address.lower()
