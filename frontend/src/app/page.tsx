@@ -4,11 +4,12 @@ import { useState } from 'react'
 import SearchInput from '@/components/SearchInput'
 import TradeTable from '@/components/TradeTable'
 import { fetchTrades } from '@/lib/api'
-import type { Trade, TradesResponse } from '@/types/trade'
+import type { Trade, ProfileInfo } from '@/types/trade'
 
 export default function Home() {
   const [trades, setTrades] = useState<Trade[]>([])
   const [address, setAddress] = useState<string>('')
+  const [profile, setProfile] = useState<ProfileInfo | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [totalCount, setTotalCount] = useState(0)
@@ -18,11 +19,13 @@ export default function Home() {
     setLoading(true)
     setError(null)
     setPage(1)
+    setProfile(null)
 
     try {
       const response = await fetchTrades(input, 1)
       setTrades(response.trades)
       setAddress(response.address)
+      setProfile(response.profile)
       setTotalCount(response.total_count)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch trades')
@@ -48,6 +51,7 @@ export default function Home() {
   }
 
   const totalPages = Math.ceil(totalCount / 50)
+  const displayName = profile?.name || profile?.pseudonym
 
   return (
     <div className="space-y-8">
@@ -63,14 +67,50 @@ export default function Home() {
 
       {address && !error && (
         <section>
-          <div className="mb-4 pb-4 border-b border-beige-border">
-            <p className="text-sm font-mono text-ink-muted">
-              Showing trades for{' '}
-              <span className="text-ink font-medium break-all">{address}</span>
-            </p>
-            <p className="text-sm font-mono text-ink-muted mt-1">
-              {totalCount} total trade{totalCount !== 1 ? 's' : ''}
-            </p>
+          <div className="mb-6 pb-4 border-b border-beige-border">
+            <div className="flex items-start gap-4">
+              {profile?.profile_image && (
+                <img
+                  src={profile.profile_image}
+                  alt={displayName || 'Profile'}
+                  className="w-16 h-16 rounded-full object-cover border border-beige-border"
+                />
+              )}
+              <div className="flex-1 min-w-0">
+                {displayName && (
+                  <div className="flex items-center gap-2 mb-1">
+                    {profile?.profile_url ? (
+                      <a
+                        href={profile.profile_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-lg font-serif hover:underline"
+                      >
+                        {displayName}
+                      </a>
+                    ) : (
+                      <span className="text-lg font-serif">{displayName}</span>
+                    )}
+                    {profile?.profile_url && (
+                      <a
+                        href={profile.profile_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-ink-muted hover:text-ink"
+                      >
+                        View on Polymarket
+                      </a>
+                    )}
+                  </div>
+                )}
+                <p className="text-sm font-mono text-ink-muted break-all">
+                  {address}
+                </p>
+                <p className="text-sm font-mono text-ink-muted mt-1">
+                  {totalCount} trade{totalCount !== 1 ? 's' : ''}
+                </p>
+              </div>
+            </div>
           </div>
 
           <TradeTable trades={trades} loading={loading} />

@@ -3,9 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from datetime import datetime, timedelta, timezone
 from app.database import get_db
-from app.models.trade import Trade, CacheMetadata, TradeResponse, TradesListResponse
+from app.models.trade import Trade, CacheMetadata, TradeResponse, TradesListResponse, ProfileInfo
 from app.services.subgraph import fetch_trades_from_subgraph
-from app.services.profile import resolve_profile_to_address
+from app.services.profile import resolve_profile_to_address, fetch_public_profile
 from app.utils.address import is_valid_address
 
 router = APIRouter()
@@ -116,8 +116,21 @@ async def get_trades(
         for t in trades
     ]
 
+    # Fetch profile info
+    profile_data = await fetch_public_profile(address)
+    profile_info = None
+    if profile_data:
+        profile_info = ProfileInfo(
+            name=profile_data.get("name"),
+            pseudonym=profile_data.get("pseudonym"),
+            profile_image=profile_data.get("profile_image"),
+            bio=profile_data.get("bio"),
+            profile_url=profile_data.get("profile_url"),
+        )
+
     return TradesListResponse(
         address=address,
+        profile=profile_info,
         trades=trade_responses,
         total_count=total_count,
         page=page,
