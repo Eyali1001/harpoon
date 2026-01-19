@@ -26,6 +26,12 @@ export interface TimezoneAnalysis {
   activity_center_utc: number | null
 }
 
+export interface CategoryStat {
+  name: string
+  count: number
+  percentage: number
+}
+
 export interface TradesResponse {
   address: string
   profile: ProfileInfo | null
@@ -35,4 +41,5 @@ export interface TradesResponse {
   limit: number
   total_earnings: string | null
   timezone_analysis: TimezoneAnalysis | null
+  top_categories: CategoryStat[]
 }

@@ -21,6 +21,7 @@ class Trade(Base):
     price = Column(DECIMAL(10, 8))
     token_id = Column(String(255))
     block_number = Column(BigInteger)
+    tags = Column(String)  # Comma-separated tags
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -63,6 +64,12 @@ class TimezoneAnalysis(BaseModel):
     activity_center_utc: float | None
 
 
+class CategoryStat(BaseModel):
+    name: str
+    count: int
+    percentage: float
+
+
 class TradesListResponse(BaseModel):
     address: str
     profile: ProfileInfo | None
@@ -72,3 +79,4 @@ class TradesListResponse(BaseModel):
     limit: int
     total_earnings: str | None
     timezone_analysis: TimezoneAnalysis | None
+    top_categories: list[CategoryStat]

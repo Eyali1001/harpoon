@@ -90,6 +90,24 @@ query GetActivity($user: String!, $first: Int!, $skip: Int!) {
 """
 
 
+async def fetch_event_tags(client: httpx.AsyncClient, event_id: str) -> list[str]:
+    """Fetch tags for an event."""
+    try:
+        response = await client.get(
+            f"{settings.gamma_api_url}/events/{event_id}",
+            timeout=10.0
+        )
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                data = data[0] if data else {}
+            tags = data.get("tags", [])
+            return [tag.get("label") for tag in tags if tag.get("label")]
+    except Exception:
+        pass
+    return []
+
+
 async def fetch_single_market_by_token(client: httpx.AsyncClient, token_id: str) -> tuple[str, dict | None]:
     """Fetch market info for a single token ID."""
     import json
@@ -120,11 +138,20 @@ async def fetch_single_market_by_token(client: httpx.AsyncClient, token_id: str)
                 except (json.JSONDecodeError, ValueError):
                     pass
 
+                # Get event tags
+                tags = []
+                events = market.get("events", [])
+                if events:
+                    event_id = events[0].get("id")
+                    if event_id:
+                        tags = await fetch_event_tags(client, event_id)
+
                 return token_id, {
                     "question": market.get("question"),
                     "outcomes": market.get("outcomes"),
                     "condition_id": market.get("conditionId"),
-                    "outcome": outcome
+                    "outcome": outcome,
+                    "tags": tags
                 }
     except Exception:
         pass
@@ -287,6 +314,7 @@ async def fetch_trades_from_subgraph(address: str) -> list[dict]:
                     "price": round(price, 4) if price else None,
                     "token_id": token_id if token_id != "0" else None,
                     "block_number": None,
+                    "tags": None,
                     "_source": "clob"
                 })
 
@@ -303,6 +331,7 @@ async def fetch_trades_from_subgraph(address: str) -> list[dict]:
                     trade["market_title"] = info.get("question")
                     trade["market_id"] = info.get("condition_id")
                     trade["outcome"] = info.get("outcome")
+                    trade["tags"] = ",".join(info.get("tags", [])) if info.get("tags") else None
 
         # Fetch activity (splits, merges, redemptions)
         skip = 0
@@ -357,6 +386,7 @@ async def fetch_trades_from_subgraph(address: str) -> list[dict]:
                     "price": None,
                     "token_id": None,
                     "block_number": None,
+                    "tags": None,
                     "_source": "split"
                 })
 
@@ -380,6 +410,7 @@ async def fetch_trades_from_subgraph(address: str) -> list[dict]:
                     "price": None,
                     "token_id": None,
                     "block_number": None,
+                    "tags": None,
                     "_source": "merge"
                 })
 
@@ -403,6 +434,7 @@ async def fetch_trades_from_subgraph(address: str) -> list[dict]:
                     "price": None,
                     "token_id": None,
                     "block_number": None,
+                    "tags": None,
                     "_source": "redemption"
                 })
 

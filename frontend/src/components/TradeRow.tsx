@@ -32,11 +32,6 @@ function formatPrice(price: string | null): string {
   return num.toFixed(4)
 }
 
-function truncateMarketTitle(title: string | null): string {
-  if (!title) return '-'
-  if (title.length <= 40) return title
-  return title.substring(0, 37) + '...'
-}
 
 export default function TradeRow({ trade }: TradeRowProps) {
   const isRedeem = trade.side === 'redeem'
@@ -60,8 +55,10 @@ export default function TradeRow({ trade }: TradeRowProps) {
       <td className="py-3 pr-4 whitespace-nowrap text-ink-muted">
         {formatTimestamp(trade.timestamp)}
       </td>
-      <td className="py-3 pr-4" title={trade.market_title || undefined}>
-        {truncateMarketTitle(trade.market_title)}
+      <td className="py-3 pr-4 max-w-xs">
+        <span className="block text-sm leading-tight">
+          {trade.market_title || '-'}
+        </span>
       </td>
       <td className={`py-3 pr-4 uppercase font-medium ${sideClass}`}>
         {trade.side || '-'}

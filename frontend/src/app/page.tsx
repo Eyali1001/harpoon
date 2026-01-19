@@ -4,8 +4,9 @@ import { useState } from 'react'
 import SearchInput from '@/components/SearchInput'
 import TradeTable from '@/components/TradeTable'
 import ActivityHistogram from '@/components/ActivityHistogram'
+import TopCategories from '@/components/TopCategories'
 import { fetchTrades } from '@/lib/api'
-import type { Trade, ProfileInfo, TimezoneAnalysis } from '@/types/trade'
+import type { Trade, ProfileInfo, TimezoneAnalysis, CategoryStat } from '@/types/trade'
 
 export default function Home() {
   const [trades, setTrades] = useState<Trade[]>([])
@@ -17,6 +18,7 @@ export default function Home() {
   const [page, setPage] = useState(1)
   const [totalEarnings, setTotalEarnings] = useState<string | null>(null)
   const [timezoneAnalysis, setTimezoneAnalysis] = useState<TimezoneAnalysis | null>(null)
+  const [topCategories, setTopCategories] = useState<CategoryStat[]>([])
 
   const handleSearch = async (input: string) => {
     setLoading(true)
@@ -25,6 +27,7 @@ export default function Home() {
     setProfile(null)
     setTotalEarnings(null)
     setTimezoneAnalysis(null)
+    setTopCategories([])
 
     try {
       const response = await fetchTrades(input, 1)
@@ -34,6 +37,7 @@ export default function Home() {
       setTotalCount(response.total_count)
       setTotalEarnings(response.total_earnings)
       setTimezoneAnalysis(response.timezone_analysis)
+      setTopCategories(response.top_categories || [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch trades')
       setTrades([])
@@ -132,8 +136,16 @@ export default function Home() {
               </div>
             </div>
 
-            {timezoneAnalysis && (
-              <ActivityHistogram analysis={timezoneAnalysis} />
+            {/* Analytics Section */}
+            {(timezoneAnalysis || topCategories.length > 0) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {timezoneAnalysis && (
+                  <ActivityHistogram analysis={timezoneAnalysis} />
+                )}
+                {topCategories.length > 0 && (
+                  <TopCategories categories={topCategories} />
+                )}
+              </div>
             )}
           </div>
 

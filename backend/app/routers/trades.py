@@ -3,7 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from datetime import datetime, timedelta, timezone
 from app.database import get_db
-from app.models.trade import Trade, CacheMetadata, TradeResponse, TradesListResponse, ProfileInfo, TimezoneAnalysis
+from app.models.trade import Trade, CacheMetadata, TradeResponse, TradesListResponse, ProfileInfo, TimezoneAnalysis, CategoryStat
+from collections import Counter
 from app.services.subgraph import fetch_trades_from_subgraph
 from app.services.profile import resolve_profile_to_address, fetch_public_profile
 from app.utils.address import is_valid_address
@@ -161,6 +162,7 @@ async def get_trades(
                         price=trade_data.get("price"),
                         token_id=trade_data.get("token_id"),
                         block_number=trade_data.get("block_number"),
+                        tags=trade_data.get("tags"),
                     )
                     db.add(trade)
 
@@ -225,15 +227,22 @@ async def get_trades(
 
     # Calculate total earnings: (sells + redeems) - buys
     all_trades_result = await db.execute(
-        select(Trade.side, Trade.amount, Trade.timestamp).where(Trade.wallet_address == address)
+        select(Trade.side, Trade.amount, Trade.timestamp, Trade.tags).where(Trade.wallet_address == address)
     )
     all_trades_data = all_trades_result.all()
 
     total_earnings = 0.0
     timestamps = []
-    for side, amount, timestamp in all_trades_data:
+    tag_counter = Counter()
+
+    for side, amount, timestamp, tags in all_trades_data:
         if timestamp:
             timestamps.append(timestamp)
+        if tags:
+            for tag in tags.split(","):
+                tag = tag.strip()
+                if tag:
+                    tag_counter[tag] += 1
         if amount is None:
             continue
         amt = float(amount)
@@ -245,6 +254,17 @@ async def get_trades(
     # Calculate timezone analysis
     tz_analysis = calculate_timezone_analysis(timestamps)
 
+    # Calculate top categories
+    total_tag_count = sum(tag_counter.values())
+    top_categories = [
+        CategoryStat(
+            name=tag,
+            count=count,
+            percentage=round((count / total_tag_count) * 100, 1) if total_tag_count > 0 else 0
+        )
+        for tag, count in tag_counter.most_common(10)
+    ]
+
     return TradesListResponse(
         address=address,
         profile=profile_info,
@@ -253,5 +273,6 @@ async def get_trades(
         page=page,
         limit=limit,
         total_earnings=f"{total_earnings:.2f}",
-        timezone_analysis=tz_analysis
+        timezone_analysis=tz_analysis,
+        top_categories=top_categories
     )
