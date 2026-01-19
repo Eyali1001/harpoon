@@ -71,9 +71,9 @@ export default function ActivityHistogram({ analysis }: ActivityHistogramProps) 
         </div>
 
         {/* Bars */}
-        <div className="flex items-end h-16 gap-[2px]">
+        <div className="flex items-end gap-[2px]" style={{ height: '80px' }}>
           {hourly_distribution.map((count, hour) => {
-            const height = (count / maxCount) * 100
+            const heightPx = maxCount > 0 ? Math.max((count / maxCount) * 72, count > 0 ? 4 : 0) : 0
             const isDaytime = daytimeHours.has(hour)
             const isActivityCenter = activity_center_utc !== null &&
               Math.abs(hour - activity_center_utc) < 0.5
@@ -81,16 +81,16 @@ export default function ActivityHistogram({ analysis }: ActivityHistogramProps) 
             return (
               <div
                 key={hour}
-                className="flex-1 relative group"
+                className="flex-1 relative group flex items-end"
                 title={`${hour.toString().padStart(2, '0')}:00 UTC: ${count} trades`}
               >
                 <div
                   className={`w-full transition-all ${
                     isDaytime
                       ? 'bg-ink'
-                      : 'bg-ink-muted opacity-40'
-                  } ${isActivityCenter ? 'ring-1 ring-green-600' : ''}`}
-                  style={{ height: `${Math.max(height, count > 0 ? 4 : 0)}%` }}
+                      : 'bg-ink/30'
+                  } ${isActivityCenter ? 'ring-2 ring-green-600' : ''}`}
+                  style={{ height: `${heightPx}px` }}
                 />
                 {/* Tooltip on hover */}
                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block z-10">
