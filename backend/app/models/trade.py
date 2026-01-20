@@ -15,8 +15,8 @@ class Trade(Base):
     timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
     market_id = Column(String(255))
     market_title = Column(String)
-    outcome = Column(String(10))
-    side = Column(String(4))
+    outcome = Column(String(255))  # Can be team names like "Diamondbacks"
+    side = Column(String(10))  # buy, sell, redeem
     amount = Column(DECIMAL(20, 8))
     price = Column(DECIMAL(10, 8))
     token_id = Column(String(255))

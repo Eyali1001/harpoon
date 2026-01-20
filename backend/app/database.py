@@ -21,5 +21,18 @@ async def get_db():
 
 
 async def init_db():
+    from sqlalchemy import text
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+        # Migrate column sizes if needed (safe to run multiple times)
+        try:
+            await conn.execute(text("ALTER TABLE trades ALTER COLUMN outcome TYPE VARCHAR(255)"))
+        except Exception:
+            pass  # Column might already be correct size or table doesn't exist yet
+
+        try:
+            await conn.execute(text("ALTER TABLE trades ALTER COLUMN side TYPE VARCHAR(10)"))
+        except Exception:
+            pass
