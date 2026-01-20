@@ -21,18 +21,30 @@ async def get_db():
 
 
 async def init_db():
+    import logging
     from sqlalchemy import text
+    # Import models so they register with Base.metadata
+    from app.models.trade import Trade, CacheMetadata
+
+    logger = logging.getLogger(__name__)
+    logger.info("Initializing database...")
 
     async with engine.begin() as conn:
+        logger.info("Creating tables...")
         await conn.run_sync(Base.metadata.create_all)
+        logger.info("Tables created successfully")
 
         # Migrate column sizes if needed (safe to run multiple times)
         try:
             await conn.execute(text("ALTER TABLE trades ALTER COLUMN outcome TYPE VARCHAR(255)"))
-        except Exception:
-            pass  # Column might already be correct size or table doesn't exist yet
+            logger.info("Migrated outcome column")
+        except Exception as e:
+            logger.info(f"Outcome column migration skipped: {e}")
 
         try:
             await conn.execute(text("ALTER TABLE trades ALTER COLUMN side TYPE VARCHAR(10)"))
-        except Exception:
-            pass
+            logger.info("Migrated side column")
+        except Exception as e:
+            logger.info(f"Side column migration skipped: {e}")
+
+    logger.info("Database initialization complete")
