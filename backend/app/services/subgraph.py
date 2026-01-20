@@ -247,10 +247,28 @@ async def fetch_market_info_by_condition(client: httpx.AsyncClient, condition_id
     return market_cache
 
 
+async def fetch_event_tags_by_slug(client: httpx.AsyncClient, event_slug: str) -> list[str]:
+    """Fetch tags for an event by slug."""
+    try:
+        response = await client.get(
+            f"{settings.gamma_api_url}/events/slug/{event_slug}",
+            timeout=10.0
+        )
+        if response.status_code == 200:
+            data = response.json()
+            tags = data.get("tags", [])
+            return [tag.get("label") for tag in tags if tag.get("label")]
+    except Exception:
+        pass
+    return []
+
+
 async def fetch_trades_from_data_api(address: str) -> list[dict]:
     """Fetch trades from Polymarket Data API."""
     all_trades = []
+    raw_trades = []
     address = address.lower()
+    event_slugs = set()
 
     async with httpx.AsyncClient() as client:
         cursor = None
@@ -275,43 +293,10 @@ async def fetch_trades_from_data_api(address: str) -> list[dict]:
                     break
 
                 for trade in trades:
-                    # timestamp is unix epoch integer
-                    ts = trade.get("timestamp")
-                    if isinstance(ts, int):
-                        timestamp = datetime.fromtimestamp(ts, tz=timezone.utc)
-                    else:
-                        timestamp = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
-
-                    # side is uppercase BUY/SELL
-                    side = trade.get("side", "").lower()
-                    if side not in ("buy", "sell"):
-                        side = "buy"
-
-                    # Get market info
-                    outcome = trade.get("outcome", "")
-                    title = trade.get("title") or trade.get("slug", "")
-
-                    # Calculate amount (size * price)
-                    size = float(trade.get("size", 0))
-                    price = float(trade.get("price", 0))
-                    amount = size * price
-
-                    all_trades.append({
-                        "tx_hash": trade.get("transactionHash") or f"data-api-{trade.get('timestamp', '')}",
-                        "timestamp": timestamp,
-                        "market_id": trade.get("conditionId") or trade.get("slug"),
-                        "market_title": title,
-                        "outcome": outcome,
-                        "side": side,
-                        "amount": round(amount, 2),
-                        "price": round(price, 4) if price else None,
-                        "token_id": trade.get("asset"),
-                        "block_number": None,
-                        "tags": None,
-                        "closed": False,
-                        "close_time": None,
-                        "outcome_won": None,
-                    })
+                    raw_trades.append(trade)
+                    event_slug = trade.get("eventSlug")
+                    if event_slug:
+                        event_slugs.add(event_slug)
 
                 # Check for next page
                 if len(trades) < 100:
@@ -323,6 +308,63 @@ async def fetch_trades_from_data_api(address: str) -> list[dict]:
             except Exception as e:
                 logger.error(f"Data API error: {e}")
                 break
+
+        # Fetch tags for all unique events (with rate limiting)
+        import asyncio
+        event_tags_cache = {}
+        semaphore = asyncio.Semaphore(5)
+
+        async def fetch_with_semaphore(slug):
+            async with semaphore:
+                tags = await fetch_event_tags_by_slug(client, slug)
+                return slug, tags
+
+        if event_slugs:
+            results = await asyncio.gather(*[fetch_with_semaphore(slug) for slug in list(event_slugs)[:50]])  # Limit to 50 events
+            for slug, tags in results:
+                event_tags_cache[slug] = tags
+
+        # Process trades with tags
+        for trade in raw_trades:
+            # timestamp is unix epoch integer
+            ts = trade.get("timestamp")
+            if isinstance(ts, int):
+                timestamp = datetime.fromtimestamp(ts, tz=timezone.utc)
+            else:
+                timestamp = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+
+            # side is uppercase BUY/SELL
+            side = trade.get("side", "").lower()
+            if side not in ("buy", "sell"):
+                side = "buy"
+
+            # Get market info
+            outcome = trade.get("outcome", "")
+            title = trade.get("title") or trade.get("slug", "")
+            event_slug = trade.get("eventSlug")
+            tags = event_tags_cache.get(event_slug, [])
+
+            # Calculate amount (size * price)
+            size = float(trade.get("size", 0))
+            price = float(trade.get("price", 0))
+            amount = size * price
+
+            all_trades.append({
+                "tx_hash": trade.get("transactionHash") or f"data-api-{trade.get('timestamp', '')}",
+                "timestamp": timestamp,
+                "market_id": trade.get("conditionId") or trade.get("slug"),
+                "market_title": title,
+                "outcome": outcome,
+                "side": side,
+                "amount": round(amount, 2),
+                "price": round(price, 4) if price else None,
+                "token_id": trade.get("asset"),
+                "block_number": None,
+                "tags": ",".join(tags) if tags else None,
+                "closed": False,
+                "close_time": None,
+                "outcome_won": None,
+            })
 
     logger.info(f"Fetched {len(all_trades)} trades from Data API for {address}")
     return all_trades
