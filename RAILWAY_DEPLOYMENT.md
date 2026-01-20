@@ -21,7 +21,9 @@ Harpoon consists of two services:
 3. Configure the service:
    - **Root Directory**: `backend`
    - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+   - **Start Command**: `sh -c 'uvicorn app.main:app --host 0.0.0.0 --port $PORT'`
+
+> **Important**: The `sh -c '...'` wrapper is required for Railway to expand the `$PORT` environment variable.
 
 ### Backend Environment Variables
 
@@ -46,8 +48,10 @@ The tables are created automatically on first run via SQLAlchemy's `create_all()
 2. Select the same `harpoon` repository
 3. Configure the service:
    - **Root Directory**: `frontend`
-   - **Build Command**: `npm install && npm run build`
+   - **Build Command**: `npm ci && npm run build`
    - **Start Command**: `npm start`
+
+> **Note**: Use `npm ci` instead of `npm install` for faster, more reliable builds in CI/CD environments.
 
 ### Frontend Environment Variables
 
