@@ -90,8 +90,27 @@ query GetActivity($user: String!, $first: Int!, $skip: Int!) {
 """
 
 
+async def fetch_event_tags(client: httpx.AsyncClient, event_id: str) -> list[str]:
+    """Fetch tags for an event."""
+    try:
+        response = await client.get(
+            f"{settings.gamma_api_url}/events/{event_id}",
+            timeout=10.0
+        )
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                data = data[0] if data else {}
+            tags = data.get("tags", [])
+            return [tag.get("label") for tag in tags if tag.get("label")]
+    except Exception:
+        pass
+    return []
+
+
 async def fetch_single_market_by_token(client: httpx.AsyncClient, token_id: str) -> tuple[str, dict | None]:
     """Fetch market info for a single token ID."""
+    import json
     try:
         response = await client.get(
             f"{settings.gamma_api_url}/markets",
@@ -102,10 +121,57 @@ async def fetch_single_market_by_token(client: httpx.AsyncClient, token_id: str)
             markets = response.json()
             if markets:
                 market = markets[0]
+                # Determine which outcome this token represents
+                # outcomes and clobTokenIds are JSON strings like '["Yes", "No"]'
+                outcome = None
+                outcome_won = None
+                try:
+                    outcomes_str = market.get("outcomes", "[]")
+                    token_ids_str = market.get("clobTokenIds", "[]")
+                    outcome_prices_str = market.get("outcomePrices", "[]")
+                    outcomes_list = json.loads(outcomes_str) if isinstance(outcomes_str, str) else outcomes_str
+                    token_ids_list = json.loads(token_ids_str) if isinstance(token_ids_str, str) else token_ids_str
+                    outcome_prices_list = json.loads(outcome_prices_str) if isinstance(outcome_prices_str, str) else outcome_prices_str
+
+                    # Find the index of our token_id and get corresponding outcome
+                    if token_id in token_ids_list:
+                        idx = token_ids_list.index(token_id)
+                        if idx < len(outcomes_list):
+                            outcome = outcomes_list[idx]
+                        # Check if this outcome won (price = "1" means it won)
+                        if idx < len(outcome_prices_list) and market.get("closed"):
+                            try:
+                                outcome_won = float(outcome_prices_list[idx]) == 1.0
+                            except (ValueError, TypeError):
+                                pass
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
+                # Get event tags
+                tags = []
+                events = market.get("events", [])
+                if events:
+                    event_id = events[0].get("id")
+                    if event_id:
+                        tags = await fetch_event_tags(client, event_id)
+
+                # Parse close time if market is closed
+                close_time = None
+                if market.get("closed") and market.get("closedTime"):
+                    try:
+                        close_time = market.get("closedTime")
+                    except Exception:
+                        pass
+
                 return token_id, {
                     "question": market.get("question"),
                     "outcomes": market.get("outcomes"),
-                    "condition_id": market.get("conditionId")
+                    "condition_id": market.get("conditionId"),
+                    "outcome": outcome,
+                    "tags": tags,
+                    "closed": market.get("closed", False),
+                    "close_time": close_time,
+                    "outcome_won": outcome_won
                 }
     except Exception:
         pass
@@ -146,7 +212,7 @@ async def fetch_market_info(client: httpx.AsyncClient, token_ids: list[str]) -> 
             return await fetch_single_market_by_token(client, tid)
 
     # Fetch all in parallel with rate limiting
-    results = await asyncio.gather(*[fetch_with_semaphore(tid) for tid in token_ids[:50]])  # Limit to 50
+    results = await asyncio.gather(*[fetch_with_semaphore(tid) for tid in token_ids])
 
     for tid, info in results:
         if info:
@@ -168,7 +234,7 @@ async def fetch_market_info_by_condition(client: httpx.AsyncClient, condition_id
             return await fetch_single_market_by_condition(client, cid)
 
     # Fetch all in parallel with rate limiting
-    results = await asyncio.gather(*[fetch_with_semaphore(cid) for cid in condition_ids[:50]])  # Limit to 50
+    results = await asyncio.gather(*[fetch_with_semaphore(cid) for cid in condition_ids])
 
     for cid, info in results:
         if info:
@@ -268,6 +334,7 @@ async def fetch_trades_from_subgraph(address: str) -> list[dict]:
                     "price": round(price, 4) if price else None,
                     "token_id": token_id if token_id != "0" else None,
                     "block_number": None,
+                    "tags": None,
                     "_source": "clob"
                 })
 
@@ -283,6 +350,11 @@ async def fetch_trades_from_subgraph(address: str) -> list[dict]:
                     info = market_cache[trade["token_id"]]
                     trade["market_title"] = info.get("question")
                     trade["market_id"] = info.get("condition_id")
+                    trade["outcome"] = info.get("outcome")
+                    trade["tags"] = ",".join(info.get("tags", [])) if info.get("tags") else None
+                    trade["closed"] = info.get("closed", False)
+                    trade["close_time"] = info.get("close_time")
+                    trade["outcome_won"] = info.get("outcome_won")
 
         # Fetch activity (splits, merges, redemptions)
         skip = 0
@@ -337,6 +409,7 @@ async def fetch_trades_from_subgraph(address: str) -> list[dict]:
                     "price": None,
                     "token_id": None,
                     "block_number": None,
+                    "tags": None,
                     "_source": "split"
                 })
 
@@ -360,6 +433,7 @@ async def fetch_trades_from_subgraph(address: str) -> list[dict]:
                     "price": None,
                     "token_id": None,
                     "block_number": None,
+                    "tags": None,
                     "_source": "merge"
                 })
 
@@ -383,6 +457,7 @@ async def fetch_trades_from_subgraph(address: str) -> list[dict]:
                     "price": None,
                     "token_id": None,
                     "block_number": None,
+                    "tags": None,
                     "_source": "redemption"
                 })
 

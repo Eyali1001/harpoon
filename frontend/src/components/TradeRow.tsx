@@ -32,40 +32,51 @@ function formatPrice(price: string | null): string {
   return num.toFixed(4)
 }
 
-function truncateMarketTitle(title: string | null): string {
-  if (!title) return '-'
-  if (title.length <= 40) return title
-  return title.substring(0, 37) + '...'
-}
 
 export default function TradeRow({ trade }: TradeRowProps) {
+  const isRedeem = trade.side === 'redeem'
+
   const sideClass = trade.side === 'buy'
     ? 'text-green-700'
     : trade.side === 'sell'
     ? 'text-red-700'
+    : trade.side === 'redeem'
+    ? 'text-blue-700'
+    : ''
+
+  const outcomeClass = trade.outcome?.toLowerCase() === 'yes'
+    ? 'text-green-700'
+    : trade.outcome?.toLowerCase() === 'no'
+    ? 'text-red-700'
     : ''
 
   return (
-    <tr className="border-b border-beige-border hover:bg-beige-dark transition-colors">
-      <td className="py-3 pr-4 whitespace-nowrap text-ink-muted">
+    <tr className={`border-b border-beige-border hover:bg-beige-dark transition-colors ${isRedeem ? 'bg-green-50' : ''}`}>
+      <td className="py-2 md:py-3 pr-3 md:pr-4 whitespace-nowrap text-ink-muted">
         {formatTimestamp(trade.timestamp)}
       </td>
-      <td className="py-3 pr-4" title={trade.market_title || undefined}>
-        {truncateMarketTitle(trade.market_title)}
+      <td className="py-2 md:py-3 pr-3 md:pr-4 max-w-[200px] md:max-w-xs">
+        <span className="block text-xs md:text-sm leading-tight">
+          {trade.market_title || '-'}
+        </span>
       </td>
-      <td className={`py-3 pr-4 uppercase font-medium ${sideClass}`}>
+      <td className={`py-2 md:py-3 pr-3 md:pr-4 uppercase font-medium ${sideClass}`}>
         {trade.side || '-'}
       </td>
-      <td className="py-3 pr-4">
+      <td className={`py-2 md:py-3 pr-3 md:pr-4 font-medium ${outcomeClass}`}>
         {trade.outcome || '-'}
       </td>
-      <td className="py-3 pr-4 text-right tabular-nums">
+      <td className="py-2 md:py-3 pr-3 md:pr-4 text-right tabular-nums">
         ${formatAmount(trade.amount)}
       </td>
-      <td className="py-3 pr-4 text-right tabular-nums">
-        {formatPrice(trade.price)}
+      <td className="py-2 md:py-3 pr-3 md:pr-4 text-right tabular-nums">
+        {isRedeem ? (
+          <span className="text-green-700 font-medium">+${formatAmount(trade.amount)}</span>
+        ) : (
+          formatPrice(trade.price)
+        )}
       </td>
-      <td className="py-3 text-right">
+      <td className="py-2 md:py-3 pl-3 md:pl-4 text-right">
         <a
           href={trade.polygonscan_url}
           target="_blank"
