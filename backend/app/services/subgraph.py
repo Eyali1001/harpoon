@@ -1,6 +1,10 @@
 import httpx
+import logging
 from datetime import datetime, timezone
 from app.config import get_settings
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -281,42 +285,55 @@ async def fetch_trades_from_subgraph(address: str) -> list[dict]:
             if not maker_fills and not taker_fills:
                 break
 
+            # Log first fill to see structure
+            if maker_fills:
+                logger.info(f"Sample maker fill keys: {list(maker_fills[0].keys())}")
+            if taker_fills:
+                logger.info(f"Sample taker fill keys: {list(taker_fills[0].keys())}")
+
             for fill in maker_fills + taker_fills:
                 timestamp = datetime.fromtimestamp(int(fill["timestamp"]), tz=timezone.utc)
-                tx_hash = fill["transactionHash"]
+                tx_hash = fill.get("transactionHash") or fill.get("txHash") or fill.get("id", "").split("-")[0]
 
                 # Determine if this is a buy or sell based on asset IDs
                 # Asset ID 0 = USDC, non-zero = outcome token
-                maker_asset = fill["makerAssetId"]
-                taker_asset = fill["takerAssetId"]
-                is_user_maker = fill["maker"].lower() == address
+                maker_asset = fill.get("makerAssetId") or fill.get("makerAsset") or "0"
+                taker_asset = fill.get("takerAssetId") or fill.get("takerAsset") or "0"
+
+                # Check for maker/taker fields with different possible names
+                maker_addr = fill.get("maker") or fill.get("makerAddress") or ""
+                is_user_maker = maker_addr.lower() == address if maker_addr else (fill in maker_fills)
+
+                # Get amounts with fallbacks for different field names
+                maker_amount = int(fill.get("makerAmountFilled") or fill.get("makerAmount") or 0) / 1e6
+                taker_amount = int(fill.get("takerAmountFilled") or fill.get("takerAmount") or 0) / 1e6
 
                 if is_user_maker:
                     if maker_asset == "0":
                         # User is maker, giving USDC = buying outcome tokens
                         side = "buy"
                         token_id = taker_asset
-                        amount = int(fill["makerAmountFilled"]) / 1e6
-                        tokens = int(fill["takerAmountFilled"]) / 1e6
+                        amount = maker_amount
+                        tokens = taker_amount
                     else:
                         # User is maker, giving tokens = selling
                         side = "sell"
                         token_id = maker_asset
-                        tokens = int(fill["makerAmountFilled"]) / 1e6
-                        amount = int(fill["takerAmountFilled"]) / 1e6
+                        tokens = maker_amount
+                        amount = taker_amount
                 else:
                     if taker_asset == "0":
                         # User is taker, giving USDC = buying
                         side = "buy"
                         token_id = maker_asset
-                        amount = int(fill["takerAmountFilled"]) / 1e6
-                        tokens = int(fill["makerAmountFilled"]) / 1e6
+                        amount = taker_amount
+                        tokens = maker_amount
                     else:
                         # User is taker, giving tokens = selling
                         side = "sell"
                         token_id = taker_asset
-                        tokens = int(fill["takerAmountFilled"]) / 1e6
-                        amount = int(fill["makerAmountFilled"]) / 1e6
+                        tokens = taker_amount
+                        amount = maker_amount
 
                 price = amount / tokens if tokens > 0 else 0
 
