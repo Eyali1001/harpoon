@@ -404,10 +404,10 @@ async def fetch_trades_from_data_api(address: str) -> list[dict]:
             close_time = market_info.get("close_time")
             outcome_prices = market_info.get("outcome_prices", {})
 
-            # Determine if this outcome won (price == 1.0 means it won)
+            # Determine if this outcome won (price > 0.99 means it won)
             outcome_won = None
             if is_closed and outcome and outcome in outcome_prices:
-                outcome_won = outcome_prices[outcome] == 1.0
+                outcome_won = outcome_prices[outcome] > 0.99
 
             # Calculate amount (size * price)
             size = float(trade.get("size", 0))
