@@ -1,7 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useParams } from 'next/navigation'
+import { useState, useCallback } from 'react'
 import SearchInput from '@/components/SearchInput'
 import TradeTable from '@/components/TradeTable'
 import ActivityHistogram from '@/components/ActivityHistogram'
@@ -12,7 +11,6 @@ import { fetchTrades } from '@/lib/api'
 import type { Trade, ProfileInfo, TimezoneAnalysis, CategoryStat, InsiderMetrics } from '@/types/trade'
 
 export default function Home() {
-  const params = useParams()
   const [trades, setTrades] = useState<Trade[]>([])
   const [address, setAddress] = useState<string>('')
   const [profile, setProfile] = useState<ProfileInfo | null>(null)
@@ -24,8 +22,6 @@ export default function Home() {
   const [timezoneAnalysis, setTimezoneAnalysis] = useState<TimezoneAnalysis | null>(null)
   const [topCategories, setTopCategories] = useState<CategoryStat[]>([])
   const [insiderMetrics, setInsiderMetrics] = useState<InsiderMetrics | null>(null)
-  const [initialInput, setInitialInput] = useState<string>('')
-  const [hasInitialized, setHasInitialized] = useState(false)
 
   const handleSearch = useCallback(async (input: string) => {
     setLoading(true)
@@ -55,21 +51,6 @@ export default function Home() {
     }
   }, [])
 
-  // Extract profile from URL params on mount
-  useEffect(() => {
-    if (hasInitialized) return
-
-    if (params.profile && Array.isArray(params.profile) && params.profile.length > 0) {
-      // Join all path segments (handles URLs with slashes)
-      const profilePath = params.profile.join('/')
-      // Decode the URL-encoded path
-      const decodedProfile = decodeURIComponent(profilePath)
-      setInitialInput(decodedProfile)
-      handleSearch(decodedProfile)
-    }
-    setHasInitialized(true)
-  }, [params.profile, hasInitialized, handleSearch])
-
   const handlePageChange = async (newPage: number) => {
     if (!address) return
 
@@ -91,7 +72,7 @@ export default function Home() {
   return (
     <div className="space-y-4 sm:space-y-6 md:space-y-8">
       <section>
-        <SearchInput onSearch={handleSearch} loading={loading} initialValue={initialInput} />
+        <SearchInput onSearch={handleSearch} loading={loading} />
       </section>
 
       {loading && (
