@@ -124,17 +124,26 @@ async def fetch_single_market_by_token(client: httpx.AsyncClient, token_id: str)
                 # Determine which outcome this token represents
                 # outcomes and clobTokenIds are JSON strings like '["Yes", "No"]'
                 outcome = None
+                outcome_won = None
                 try:
                     outcomes_str = market.get("outcomes", "[]")
                     token_ids_str = market.get("clobTokenIds", "[]")
+                    outcome_prices_str = market.get("outcomePrices", "[]")
                     outcomes_list = json.loads(outcomes_str) if isinstance(outcomes_str, str) else outcomes_str
                     token_ids_list = json.loads(token_ids_str) if isinstance(token_ids_str, str) else token_ids_str
+                    outcome_prices_list = json.loads(outcome_prices_str) if isinstance(outcome_prices_str, str) else outcome_prices_str
 
                     # Find the index of our token_id and get corresponding outcome
                     if token_id in token_ids_list:
                         idx = token_ids_list.index(token_id)
                         if idx < len(outcomes_list):
                             outcome = outcomes_list[idx]
+                        # Check if this outcome won (price = "1" means it won)
+                        if idx < len(outcome_prices_list) and market.get("closed"):
+                            try:
+                                outcome_won = float(outcome_prices_list[idx]) == 1.0
+                            except (ValueError, TypeError):
+                                pass
                 except (json.JSONDecodeError, ValueError):
                     pass
 
@@ -146,12 +155,23 @@ async def fetch_single_market_by_token(client: httpx.AsyncClient, token_id: str)
                     if event_id:
                         tags = await fetch_event_tags(client, event_id)
 
+                # Parse close time if market is closed
+                close_time = None
+                if market.get("closed") and market.get("closedTime"):
+                    try:
+                        close_time = market.get("closedTime")
+                    except Exception:
+                        pass
+
                 return token_id, {
                     "question": market.get("question"),
                     "outcomes": market.get("outcomes"),
                     "condition_id": market.get("conditionId"),
                     "outcome": outcome,
-                    "tags": tags
+                    "tags": tags,
+                    "closed": market.get("closed", False),
+                    "close_time": close_time,
+                    "outcome_won": outcome_won
                 }
     except Exception:
         pass
@@ -332,6 +352,9 @@ async def fetch_trades_from_subgraph(address: str) -> list[dict]:
                     trade["market_id"] = info.get("condition_id")
                     trade["outcome"] = info.get("outcome")
                     trade["tags"] = ",".join(info.get("tags", [])) if info.get("tags") else None
+                    trade["closed"] = info.get("closed", False)
+                    trade["close_time"] = info.get("close_time")
+                    trade["outcome_won"] = info.get("outcome_won")
 
         # Fetch activity (splits, merges, redemptions)
         skip = 0

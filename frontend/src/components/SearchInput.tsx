@@ -1,14 +1,22 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 interface SearchInputProps {
   onSearch: (input: string) => void
   loading: boolean
+  initialValue?: string
 }
 
-export default function SearchInput({ onSearch, loading }: SearchInputProps) {
-  const [input, setInput] = useState('')
+export default function SearchInput({ onSearch, loading, initialValue = '' }: SearchInputProps) {
+  const [input, setInput] = useState(initialValue)
+
+  // Update input when initialValue changes (from URL routing)
+  useEffect(() => {
+    if (initialValue) {
+      setInput(initialValue)
+    }
+  }, [initialValue])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -24,7 +32,7 @@ export default function SearchInput({ onSearch, loading }: SearchInputProps) {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Enter Polygon wallet address (0x...)"
+          placeholder="Wallet address, username, or profile URL"
           className="w-full px-0 py-3 bg-transparent border-0 border-b-2 border-ink font-mono text-base placeholder:text-ink-muted focus:outline-none focus:border-ink-light transition-colors"
           disabled={loading}
         />

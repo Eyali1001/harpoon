@@ -11,7 +11,12 @@ export default function ActivityHistogram({ analysis }: ActivityHistogramProps) 
   const totalTrades = hourly_distribution.reduce((a, b) => a + b, 0)
 
   if (totalTrades === 0) {
-    return null
+    return (
+      <div className="p-4 border border-beige-border bg-beige-light h-full">
+        <h3 className="font-serif text-sm font-medium mb-3">Trading Activity Pattern</h3>
+        <p className="text-xs text-ink-muted">No trading activity data</p>
+      </div>
+    )
   }
 
   // Calculate which hours are "daytime" (8am-11pm) in the inferred timezone
@@ -47,7 +52,7 @@ export default function ActivityHistogram({ analysis }: ActivityHistogramProps) 
   }
 
   return (
-    <div className="mt-4 p-4 border border-beige-border bg-beige-light">
+    <div className="p-4 border border-beige-border bg-beige-light h-full">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-serif text-sm font-medium">Trading Activity Pattern</h3>
         {inferred_timezone && (

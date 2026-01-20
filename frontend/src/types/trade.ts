@@ -30,6 +30,21 @@ export interface CategoryStat {
   name: string
   count: number
   percentage: number
+  pnl: number | null
+}
+
+export interface InsiderMetrics {
+  win_rate: number | null
+  expected_win_rate: number | null
+  win_rate_edge: number | null
+  contrarian_trades: number
+  contrarian_wins: number
+  contrarian_win_rate: number | null
+  avg_hours_before_close: number | null
+  trades_within_24h: number
+  trades_within_1h: number
+  resolved_trades: number
+  total_trades: number
 }
 
 export interface TradesResponse {
@@ -42,4 +57,5 @@ export interface TradesResponse {
   total_earnings: string | null
   timezone_analysis: TimezoneAnalysis | null
   top_categories: CategoryStat[]
+  insider_metrics: InsiderMetrics | null
 }
