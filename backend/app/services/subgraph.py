@@ -247,8 +247,9 @@ async def fetch_market_info_by_condition(client: httpx.AsyncClient, condition_id
     return market_cache
 
 
-async def fetch_event_tags_by_slug(client: httpx.AsyncClient, event_slug: str) -> list[str]:
-    """Fetch tags for an event by slug."""
+async def fetch_event_info_by_slug(client: httpx.AsyncClient, event_slug: str) -> dict:
+    """Fetch event info including tags from Gamma API."""
+    result = {"tags": []}
     try:
         response = await client.get(
             f"{settings.gamma_api_url}/events/slug/{event_slug}",
@@ -257,10 +258,42 @@ async def fetch_event_tags_by_slug(client: httpx.AsyncClient, event_slug: str) -
         if response.status_code == 200:
             data = response.json()
             tags = data.get("tags", [])
-            return [tag.get("label") for tag in tags if tag.get("label")]
+            result["tags"] = [tag.get("label") for tag in tags if tag.get("label")]
     except Exception:
         pass
-    return []
+    return result
+
+
+async def fetch_market_info_by_slug(client: httpx.AsyncClient, market_slug: str) -> dict:
+    """Fetch market info including resolution status from Gamma API."""
+    result = {"closed": False, "close_time": None, "outcome_prices": {}}
+    try:
+        response = await client.get(
+            f"{settings.gamma_api_url}/markets",
+            params={"slug": market_slug},
+            timeout=10.0
+        )
+        if response.status_code == 200:
+            markets = response.json()
+            if markets:
+                market = markets[0]
+                result["closed"] = market.get("closed", False)
+                result["close_time"] = market.get("closedTime")
+                # Parse outcome prices to determine winner
+                import json
+                outcomes_str = market.get("outcomes", "[]")
+                prices_str = market.get("outcomePrices", "[]")
+                try:
+                    outcomes = json.loads(outcomes_str) if isinstance(outcomes_str, str) else outcomes_str
+                    prices = json.loads(prices_str) if isinstance(prices_str, str) else prices_str
+                    for i, outcome in enumerate(outcomes):
+                        if i < len(prices):
+                            result["outcome_prices"][outcome] = float(prices[i])
+                except:
+                    pass
+    except Exception as e:
+        logger.debug(f"Failed to fetch market info for {market_slug}: {e}")
+    return result
 
 
 async def fetch_trades_from_data_api(address: str) -> list[dict]:
@@ -269,6 +302,7 @@ async def fetch_trades_from_data_api(address: str) -> list[dict]:
     raw_trades = []
     address = address.lower()
     event_slugs = set()
+    market_slugs = set()
 
     async with httpx.AsyncClient() as client:
         cursor = None
@@ -295,8 +329,11 @@ async def fetch_trades_from_data_api(address: str) -> list[dict]:
                 for trade in trades:
                     raw_trades.append(trade)
                     event_slug = trade.get("eventSlug")
+                    market_slug = trade.get("slug")
                     if event_slug:
                         event_slugs.add(event_slug)
+                    if market_slug:
+                        market_slugs.add(market_slug)
 
                 # Check for next page
                 if len(trades) < 100:
@@ -309,22 +346,35 @@ async def fetch_trades_from_data_api(address: str) -> list[dict]:
                 logger.error(f"Data API error: {e}")
                 break
 
-        # Fetch tags for all unique events (with rate limiting)
+        # Fetch tags and market info concurrently
         import asyncio
-        event_tags_cache = {}
-        semaphore = asyncio.Semaphore(5)
+        event_info_cache = {}
+        market_info_cache = {}
+        semaphore = asyncio.Semaphore(10)
 
-        async def fetch_with_semaphore(slug):
+        async def fetch_event_with_semaphore(slug):
             async with semaphore:
-                tags = await fetch_event_tags_by_slug(client, slug)
-                return slug, tags
+                info = await fetch_event_info_by_slug(client, slug)
+                return slug, info
 
+        async def fetch_market_with_semaphore(slug):
+            async with semaphore:
+                info = await fetch_market_info_by_slug(client, slug)
+                return slug, info
+
+        # Fetch event info (for tags)
         if event_slugs:
-            results = await asyncio.gather(*[fetch_with_semaphore(slug) for slug in list(event_slugs)[:50]])  # Limit to 50 events
-            for slug, tags in results:
-                event_tags_cache[slug] = tags
+            results = await asyncio.gather(*[fetch_event_with_semaphore(slug) for slug in list(event_slugs)[:50]])
+            for slug, info in results:
+                event_info_cache[slug] = info
 
-        # Process trades with tags
+        # Fetch market info (for resolution status)
+        if market_slugs:
+            results = await asyncio.gather(*[fetch_market_with_semaphore(slug) for slug in list(market_slugs)[:50]])
+            for slug, info in results:
+                market_info_cache[slug] = info
+
+        # Process trades with tags and market resolution
         for trade in raw_trades:
             # timestamp is unix epoch integer
             ts = trade.get("timestamp")
@@ -342,7 +392,22 @@ async def fetch_trades_from_data_api(address: str) -> list[dict]:
             outcome = trade.get("outcome", "")
             title = trade.get("title") or trade.get("slug", "")
             event_slug = trade.get("eventSlug")
-            tags = event_tags_cache.get(event_slug, [])
+            market_slug = trade.get("slug")
+
+            # Get tags from event info
+            event_info = event_info_cache.get(event_slug, {})
+            tags = event_info.get("tags", [])
+
+            # Get market resolution status
+            market_info = market_info_cache.get(market_slug, {})
+            is_closed = market_info.get("closed", False)
+            close_time = market_info.get("close_time")
+            outcome_prices = market_info.get("outcome_prices", {})
+
+            # Determine if this outcome won (price == 1.0 means it won)
+            outcome_won = None
+            if is_closed and outcome and outcome in outcome_prices:
+                outcome_won = outcome_prices[outcome] == 1.0
 
             # Calculate amount (size * price)
             size = float(trade.get("size", 0))
@@ -361,9 +426,9 @@ async def fetch_trades_from_data_api(address: str) -> list[dict]:
                 "token_id": trade.get("asset"),
                 "block_number": None,
                 "tags": ",".join(tags) if tags else None,
-                "closed": False,
-                "close_time": None,
-                "outcome_won": None,
+                "closed": is_closed,
+                "close_time": close_time,
+                "outcome_won": outcome_won,
             })
 
     logger.info(f"Fetched {len(all_trades)} trades from Data API for {address}")
