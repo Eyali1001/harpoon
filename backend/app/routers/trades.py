@@ -1,3 +1,5 @@
+import logging
+import traceback
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -8,6 +10,9 @@ from collections import Counter
 from app.services.subgraph import fetch_trades_from_subgraph
 from app.services.profile import resolve_profile_to_address, fetch_public_profile
 from app.utils.address import is_valid_address
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -116,8 +121,18 @@ async def get_trades(
     limit: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db)
 ):
-    # Resolve profile URL/username to wallet address
-    address = await resolve_profile_to_address(address_or_url)
+    logger.info(f"Processing request for: {address_or_url}")
+
+    try:
+        # Resolve profile URL/username to wallet address
+        address = await resolve_profile_to_address(address_or_url)
+    except Exception as e:
+        logger.error(f"Profile resolution error for {address_or_url}: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail={
+            "code": "PROFILE_ERROR",
+            "message": f"Failed to resolve profile: {str(e)}"
+        })
 
     if not address or not is_valid_address(address):
         raise HTTPException(status_code=400, detail={
@@ -180,25 +195,35 @@ async def get_trades(
 
             await db.commit()
         except Exception as e:
+            logger.error(f"SUBGRAPH_ERROR for {address}: {str(e)}")
+            logger.error(traceback.format_exc())
             raise HTTPException(status_code=500, detail={
                 "code": "SUBGRAPH_ERROR",
                 "message": f"Failed to fetch trades: {str(e)}"
             })
 
-    count_result = await db.execute(
-        select(func.count()).select_from(Trade).where(Trade.wallet_address == address)
-    )
-    total_count = count_result.scalar()
+    try:
+        count_result = await db.execute(
+            select(func.count()).select_from(Trade).where(Trade.wallet_address == address)
+        )
+        total_count = count_result.scalar()
 
-    offset = (page - 1) * limit
-    trades_result = await db.execute(
-        select(Trade)
-        .where(Trade.wallet_address == address)
-        .order_by(Trade.timestamp.desc())
-        .offset(offset)
-        .limit(limit)
-    )
-    trades = trades_result.scalars().all()
+        offset = (page - 1) * limit
+        trades_result = await db.execute(
+            select(Trade)
+            .where(Trade.wallet_address == address)
+            .order_by(Trade.timestamp.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        trades = trades_result.scalars().all()
+    except Exception as e:
+        logger.error(f"Database query error for {address}: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail={
+            "code": "DATABASE_ERROR",
+            "message": f"Failed to query trades: {str(e)}"
+        })
 
     trade_responses = [
         TradeResponse(
@@ -355,15 +380,23 @@ async def get_trades(
         for tag, count in tag_counter.most_common(10)
     ]
 
-    return TradesListResponse(
-        address=address,
-        profile=profile_info,
-        trades=trade_responses,
-        total_count=total_count,
-        page=page,
-        limit=limit,
-        total_earnings=f"{total_earnings:.2f}",
-        timezone_analysis=tz_analysis,
-        top_categories=top_categories,
-        insider_metrics=insider_metrics
-    )
+    try:
+        return TradesListResponse(
+            address=address,
+            profile=profile_info,
+            trades=trade_responses,
+            total_count=total_count,
+            page=page,
+            limit=limit,
+            total_earnings=f"{total_earnings:.2f}",
+            timezone_analysis=tz_analysis,
+            top_categories=top_categories,
+            insider_metrics=insider_metrics
+        )
+    except Exception as e:
+        logger.error(f"Response building error for {address}: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail={
+            "code": "RESPONSE_ERROR",
+            "message": f"Failed to build response: {str(e)}"
+        })
