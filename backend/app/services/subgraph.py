@@ -247,10 +247,93 @@ async def fetch_market_info_by_condition(client: httpx.AsyncClient, condition_id
     return market_cache
 
 
-async def fetch_trades_from_subgraph(address: str) -> list[dict]:
-    """Fetch all trades for an address from multiple subgraphs."""
+async def fetch_trades_from_data_api(address: str) -> list[dict]:
+    """Fetch trades from Polymarket Data API."""
     all_trades = []
     address = address.lower()
+
+    async with httpx.AsyncClient() as client:
+        cursor = None
+        while True:
+            params = {"user": address, "limit": 100}
+            if cursor:
+                params["cursor"] = cursor
+
+            try:
+                response = await client.get(
+                    "https://data-api.polymarket.com/trades",
+                    params=params,
+                    timeout=30.0
+                )
+
+                if response.status_code != 200:
+                    logger.warning(f"Data API returned {response.status_code}")
+                    break
+
+                trades = response.json()
+                if not trades:
+                    break
+
+                for trade in trades:
+                    timestamp = datetime.fromisoformat(trade["matchTime"].replace("Z", "+00:00"))
+                    side = trade.get("side", "").lower()
+                    if side not in ("buy", "sell"):
+                        side = "buy" if trade.get("type") == "BUY" else "sell"
+
+                    # Get market info
+                    market_slug = trade.get("marketSlug", "")
+                    outcome = trade.get("outcome", "")
+                    title = trade.get("title") or trade.get("question") or market_slug
+
+                    # Calculate amount (size * price for buys, size * price for sells)
+                    size = float(trade.get("size", 0))
+                    price = float(trade.get("price", 0))
+                    amount = size * price if side == "buy" else size * price
+
+                    all_trades.append({
+                        "tx_hash": trade.get("transactionHash") or trade.get("id", ""),
+                        "timestamp": timestamp,
+                        "market_id": trade.get("conditionId") or trade.get("marketSlug"),
+                        "market_title": title,
+                        "outcome": outcome,
+                        "side": side,
+                        "amount": round(amount, 2),
+                        "price": round(price, 4) if price else None,
+                        "token_id": trade.get("assetId"),
+                        "block_number": None,
+                        "tags": None,
+                        "closed": False,
+                        "close_time": None,
+                        "outcome_won": None,
+                    })
+
+                # Check for next page
+                if len(trades) < 100:
+                    break
+                cursor = trades[-1].get("id")
+                if not cursor:
+                    break
+
+            except Exception as e:
+                logger.error(f"Data API error: {e}")
+                break
+
+    logger.info(f"Fetched {len(all_trades)} trades from Data API for {address}")
+    return all_trades
+
+
+async def fetch_trades_from_subgraph(address: str) -> list[dict]:
+    """Fetch all trades for an address from Data API and subgraphs."""
+    all_trades = []
+    address = address.lower()
+
+    # First try the Data API (more complete data)
+    data_api_trades = await fetch_trades_from_data_api(address)
+    if data_api_trades:
+        return data_api_trades
+
+    # Fall back to subgraphs if Data API returns nothing
+    logger.info("Data API returned no trades, trying subgraphs...")
 
     async with httpx.AsyncClient() as client:
         # Fetch CLOB order fills
