@@ -1,6 +1,7 @@
 import type { TradesResponse } from '@/types/trade'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+// Hardcoded for Railway deployment - env var not being picked up
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://harpoon-backend-production.up.railway.app'
 
 // Log API URL at module load time
 console.log('[API] NEXT_PUBLIC_API_URL:', process.env.NEXT_PUBLIC_API_URL)
