@@ -275,31 +275,37 @@ async def fetch_trades_from_data_api(address: str) -> list[dict]:
                     break
 
                 for trade in trades:
-                    timestamp = datetime.fromisoformat(trade["matchTime"].replace("Z", "+00:00"))
+                    # timestamp is unix epoch integer
+                    ts = trade.get("timestamp")
+                    if isinstance(ts, int):
+                        timestamp = datetime.fromtimestamp(ts, tz=timezone.utc)
+                    else:
+                        timestamp = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+
+                    # side is uppercase BUY/SELL
                     side = trade.get("side", "").lower()
                     if side not in ("buy", "sell"):
-                        side = "buy" if trade.get("type") == "BUY" else "sell"
+                        side = "buy"
 
                     # Get market info
-                    market_slug = trade.get("marketSlug", "")
                     outcome = trade.get("outcome", "")
-                    title = trade.get("title") or trade.get("question") or market_slug
+                    title = trade.get("title") or trade.get("slug", "")
 
-                    # Calculate amount (size * price for buys, size * price for sells)
+                    # Calculate amount (size * price)
                     size = float(trade.get("size", 0))
                     price = float(trade.get("price", 0))
-                    amount = size * price if side == "buy" else size * price
+                    amount = size * price
 
                     all_trades.append({
-                        "tx_hash": trade.get("transactionHash") or trade.get("id", ""),
+                        "tx_hash": trade.get("transactionHash") or f"data-api-{trade.get('timestamp', '')}",
                         "timestamp": timestamp,
-                        "market_id": trade.get("conditionId") or trade.get("marketSlug"),
+                        "market_id": trade.get("conditionId") or trade.get("slug"),
                         "market_title": title,
                         "outcome": outcome,
                         "side": side,
                         "amount": round(amount, 2),
                         "price": round(price, 4) if price else None,
-                        "token_id": trade.get("assetId"),
+                        "token_id": trade.get("asset"),
                         "block_number": None,
                         "tags": None,
                         "closed": False,
