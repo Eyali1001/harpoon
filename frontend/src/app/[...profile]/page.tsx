@@ -8,7 +8,7 @@ import ActivityHistogram from '@/components/ActivityHistogram'
 import TopCategories from '@/components/TopCategories'
 import InsiderAnalytics from '@/components/InsiderAnalytics'
 import MetricsExplainer from '@/components/MetricsExplainer'
-import { fetchTrades } from '@/lib/api'
+import { fetchTrades, deleteTradesCache } from '@/lib/api'
 import type { Trade, ProfileInfo, TimezoneAnalysis, CategoryStat, InsiderMetrics } from '@/types/trade'
 
 export default function ProfilePage() {
@@ -80,6 +80,29 @@ export default function ProfilePage() {
       setPage(newPage)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch trades')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleClearCache = async () => {
+    if (!address) return
+    if (!confirm('Clear cached data and refresh? This will re-fetch all trades from Polymarket.')) return
+
+    setLoading(true)
+    try {
+      await deleteTradesCache(address)
+      // Re-fetch trades
+      const response = await fetchTrades(address, 1)
+      setTrades(response.trades)
+      setPage(1)
+      setTotalCount(response.total_count)
+      setTotalEarnings(response.total_earnings)
+      setTimezoneAnalysis(response.timezone_analysis)
+      setTopCategories(response.top_categories || [])
+      setInsiderMetrics(response.insider_metrics || null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to refresh')
     } finally {
       setLoading(false)
     }
@@ -195,6 +218,16 @@ export default function ProfilePage() {
               </button>
             </div>
           )}
+
+          <div className="mt-8 pt-4 border-t border-beige-border">
+            <button
+              onClick={handleClearCache}
+              disabled={loading}
+              className="text-xs font-mono text-ink-muted hover:text-ink disabled:opacity-50 transition-colors"
+            >
+              Clear cache & refresh
+            </button>
+          </div>
         </section>
       )}
 

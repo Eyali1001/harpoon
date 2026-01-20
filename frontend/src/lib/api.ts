@@ -34,3 +34,22 @@ export async function fetchTrades(
 
   return response.json()
 }
+
+export async function deleteTradesCache(address: string): Promise<void> {
+  const url = `${API_URL}/api/trades/${encodeURIComponent(address)}`
+
+  console.log('[API] Deleting cache:', url)
+
+  let response: Response
+  try {
+    response = await fetch(url, { method: 'DELETE' })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Network error'
+    throw new Error(`Failed to delete cache: ${message}`)
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new Error(error.detail?.message || error.detail || 'Failed to delete cache')
+  }
+}

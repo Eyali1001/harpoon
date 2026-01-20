@@ -400,3 +400,34 @@ async def get_trades(
             "code": "RESPONSE_ERROR",
             "message": f"Failed to build response: {str(e)}"
         })
+
+
+@router.delete("/trades/{address}")
+async def delete_trades_cache(
+    address: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete all cached trades and metadata for an address."""
+    from sqlalchemy import delete
+
+    address = address.lower()
+    logger.info(f"Deleting cache for {address}")
+
+    try:
+        # Delete trades
+        await db.execute(
+            delete(Trade).where(Trade.wallet_address == address)
+        )
+        # Delete cache metadata
+        await db.execute(
+            delete(CacheMetadata).where(CacheMetadata.wallet_address == address)
+        )
+        await db.commit()
+
+        return {"status": "ok", "message": f"Deleted cache for {address}"}
+    except Exception as e:
+        logger.error(f"Delete error for {address}: {str(e)}")
+        raise HTTPException(status_code=500, detail={
+            "code": "DELETE_ERROR",
+            "message": f"Failed to delete cache: {str(e)}"
+        })
