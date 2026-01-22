@@ -53,3 +53,24 @@ export async function deleteTradesCache(address: string): Promise<void> {
     throw new Error(error.detail?.message || error.detail || 'Failed to delete cache')
   }
 }
+
+export async function clearAllData(): Promise<{ deleted_trades: number; deleted_cache_entries: number }> {
+  const url = `${API_URL}/api/admin/clear-all`
+
+  console.log('[API] Clearing all data')
+
+  let response: Response
+  try {
+    response = await fetch(url, { method: 'DELETE' })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Network error'
+    throw new Error(`Failed to clear all data: ${message}`)
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new Error(error.detail?.message || error.detail || 'Failed to clear all data')
+  }
+
+  return response.json()
+}

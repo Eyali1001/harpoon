@@ -3,6 +3,7 @@ export interface Trade {
   timestamp: string
   market_id: string | null
   market_title: string | null
+  market_slug: string | null
   outcome: string | null
   side: string | null
   amount: string | null

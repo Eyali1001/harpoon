@@ -7,7 +7,7 @@ import ActivityHistogram from '@/components/ActivityHistogram'
 import TopCategories from '@/components/TopCategories'
 import InsiderAnalytics from '@/components/InsiderAnalytics'
 import MetricsExplainer from '@/components/MetricsExplainer'
-import { fetchTrades, deleteTradesCache } from '@/lib/api'
+import { fetchTrades, deleteTradesCache, clearAllData } from '@/lib/api'
 import type { Trade, ProfileInfo, TimezoneAnalysis, CategoryStat, InsiderMetrics } from '@/types/trade'
 
 export default function Home() {
@@ -84,6 +84,29 @@ export default function Home() {
       setInsiderMetrics(response.insider_metrics || null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to refresh')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleClearAllData = async () => {
+    if (!confirm('⚠️ DELETE ALL DATA?\n\nThis will permanently delete ALL cached trades and profiles from the database. This action cannot be undone.')) return
+
+    setLoading(true)
+    try {
+      const result = await clearAllData()
+      alert(`Deleted ${result.deleted_trades} trades and ${result.deleted_cache_entries} cache entries.`)
+      // Reset state
+      setTrades([])
+      setAddress('')
+      setProfile(null)
+      setTotalCount(0)
+      setTotalEarnings(null)
+      setTimezoneAnalysis(null)
+      setTopCategories([])
+      setInsiderMetrics(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to clear data')
     } finally {
       setLoading(false)
     }
@@ -219,6 +242,17 @@ export default function Home() {
           </p>
         </div>
       )}
+
+      {/* Admin section - always visible at bottom */}
+      <div className="mt-12 pt-4 border-t border-beige-border">
+        <button
+          onClick={handleClearAllData}
+          disabled={loading}
+          className="text-xs font-mono text-red-600 hover:text-red-800 hover:bg-red-50 px-2 py-1 border border-red-300 disabled:opacity-50 transition-colors"
+        >
+          Clear all database
+        </button>
+      </div>
     </div>
   )
 }

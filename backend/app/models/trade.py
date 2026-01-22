@@ -15,6 +15,7 @@ class Trade(Base):
     timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
     market_id = Column(String(255))
     market_title = Column(String)
+    market_slug = Column(String(500))  # Polymarket URL slug
     outcome = Column(String(255))  # Can be team names like "Diamondbacks"
     side = Column(String(10))  # buy, sell, redeem
     amount = Column(DECIMAL(20, 8))
@@ -41,6 +42,7 @@ class TradeResponse(BaseModel):
     timestamp: datetime
     market_id: str | None
     market_title: str | None
+    market_slug: str | None
     outcome: str | None
     side: str | None
     amount: str | None

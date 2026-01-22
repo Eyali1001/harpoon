@@ -247,6 +247,45 @@ async def fetch_market_info_by_condition(client: httpx.AsyncClient, condition_id
     return market_cache
 
 
+async def fetch_profit_from_positions(address: str) -> dict:
+    """Fetch realized and unrealized P/L from Polymarket positions API."""
+    result = {"realized_pnl": 0.0, "unrealized_pnl": 0.0, "total_pnl": 0.0}
+    address = address.lower()
+
+    async with httpx.AsyncClient() as client:
+        offset = 0
+        while offset < 1000:  # Safety limit
+            try:
+                response = await client.get(
+                    "https://data-api.polymarket.com/positions",
+                    params={"user": address, "limit": 100, "offset": offset},
+                    timeout=30.0
+                )
+
+                if response.status_code != 200:
+                    break
+
+                positions = response.json()
+                if not positions:
+                    break
+
+                for pos in positions:
+                    result["realized_pnl"] += float(pos.get("realizedPnl", 0))
+                    result["unrealized_pnl"] += float(pos.get("cashPnl", 0))
+
+                if len(positions) < 100:
+                    break
+                offset += 100
+
+            except Exception as e:
+                logger.error(f"Positions API error: {e}")
+                break
+
+    result["total_pnl"] = result["realized_pnl"] + result["unrealized_pnl"]
+    logger.info(f"P/L for {address}: realized={result['realized_pnl']:.2f}, unrealized={result['unrealized_pnl']:.2f}")
+    return result
+
+
 async def fetch_event_info_by_slug(client: httpx.AsyncClient, event_slug: str) -> dict:
     """Fetch event info including tags from Gamma API."""
     result = {"tags": []}
@@ -305,11 +344,10 @@ async def fetch_trades_from_data_api(address: str) -> list[dict]:
     market_slugs = set()
 
     async with httpx.AsyncClient() as client:
-        cursor = None
-        while True:
-            params = {"user": address, "limit": 100}
-            if cursor:
-                params["cursor"] = cursor
+        offset = 0
+        max_trades = 5000  # Safety limit
+        while offset < max_trades:
+            params = {"user": address, "limit": 100, "offset": offset}
 
             try:
                 response = await client.get(
@@ -338,13 +376,13 @@ async def fetch_trades_from_data_api(address: str) -> list[dict]:
                 # Check for next page
                 if len(trades) < 100:
                     break
-                cursor = trades[-1].get("id")
-                if not cursor:
-                    break
+                offset += 100
 
             except Exception as e:
                 logger.error(f"Data API error: {e}")
                 break
+
+        logger.info(f"Fetched {len(raw_trades)} raw trades for {address}")
 
         # Fetch tags and market info concurrently
         import asyncio
@@ -417,8 +455,9 @@ async def fetch_trades_from_data_api(address: str) -> list[dict]:
             all_trades.append({
                 "tx_hash": trade.get("transactionHash") or f"data-api-{trade.get('timestamp', '')}",
                 "timestamp": timestamp,
-                "market_id": trade.get("conditionId") or trade.get("slug"),
+                "market_id": trade.get("conditionId") or market_slug,
                 "market_title": title,
+                "market_slug": market_slug,
                 "outcome": outcome,
                 "side": side,
                 "amount": round(amount, 2),

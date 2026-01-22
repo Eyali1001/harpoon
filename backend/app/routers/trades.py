@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from app.database import get_db
 from app.models.trade import Trade, CacheMetadata, TradeResponse, TradesListResponse, ProfileInfo, TimezoneAnalysis, CategoryStat, InsiderMetrics
 from collections import Counter
-from app.services.subgraph import fetch_trades_from_subgraph
+from app.services.subgraph import fetch_trades_from_subgraph, fetch_profit_from_positions
 from app.services.profile import resolve_profile_to_address, fetch_public_profile
 from app.utils.address import is_valid_address
 
@@ -171,6 +171,7 @@ async def get_trades(
                         timestamp=trade_data["timestamp"],
                         market_id=trade_data.get("market_id"),
                         market_title=trade_data.get("market_title"),
+                        market_slug=trade_data.get("market_slug"),
                         outcome=trade_data.get("outcome"),
                         side=trade_data.get("side"),
                         amount=trade_data.get("amount"),
@@ -231,6 +232,7 @@ async def get_trades(
             timestamp=t.timestamp,
             market_id=t.market_id,
             market_title=t.market_title,
+            market_slug=t.market_slug,
             outcome=t.outcome,
             side=t.side,
             amount=str(t.amount) if t.amount else None,
@@ -253,7 +255,11 @@ async def get_trades(
             profile_url=profile_data.get("profile_url"),
         )
 
-    # Calculate total earnings: (sells + redeems) - buys
+    # Fetch P/L from positions API (more accurate than trade-based calculation)
+    profit_data = await fetch_profit_from_positions(address)
+    total_earnings = profit_data["total_pnl"]
+
+    # Get all trades for analytics
     all_trades_result = await db.execute(
         select(
             Trade.side, Trade.amount, Trade.timestamp, Trade.tags,
@@ -262,10 +268,9 @@ async def get_trades(
     )
     all_trades_data = all_trades_result.all()
 
-    total_earnings = 0.0
     timestamps = []
     tag_counter = Counter()
-    tag_pnl = {}  # Track P/L per category
+    tag_pnl = {}  # Track P/L per category (approximation based on trades)
 
     # Insider metrics tracking
     resolved_buy_trades = []  # (price, outcome_won, hours_before_close)
@@ -287,16 +292,15 @@ async def get_trades(
                     if tag not in tag_pnl:
                         tag_pnl[tag] = 0.0
 
-        # Calculate P/L
+        # Calculate approximate P/L per trade for category breakdown
+        # (This is an approximation - actual P/L comes from positions API)
         pnl = 0.0
         if side == "buy":
-            total_earnings -= amt
             pnl = -amt
         elif side in ("sell", "redeem"):
-            total_earnings += amt
             pnl = amt
 
-        # Update P/L per category
+        # Update P/L per category (approximation)
         for tag in trade_tags:
             tag_pnl[tag] += pnl
 
@@ -430,4 +434,34 @@ async def delete_trades_cache(
         raise HTTPException(status_code=500, detail={
             "code": "DELETE_ERROR",
             "message": f"Failed to delete cache: {str(e)}"
+        })
+
+
+@router.delete("/admin/clear-all")
+async def clear_all_data(
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete ALL cached trades and metadata from the database."""
+    from sqlalchemy import delete
+
+    logger.warning("Clearing ALL data from database")
+
+    try:
+        # Delete all trades
+        result_trades = await db.execute(delete(Trade))
+        # Delete all cache metadata
+        result_cache = await db.execute(delete(CacheMetadata))
+        await db.commit()
+
+        return {
+            "status": "ok",
+            "message": "All data cleared",
+            "deleted_trades": result_trades.rowcount,
+            "deleted_cache_entries": result_cache.rowcount
+        }
+    except Exception as e:
+        logger.error(f"Clear all error: {str(e)}")
+        raise HTTPException(status_code=500, detail={
+            "code": "CLEAR_ALL_ERROR",
+            "message": f"Failed to clear all data: {str(e)}"
         })

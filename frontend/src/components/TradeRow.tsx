@@ -56,9 +56,20 @@ export default function TradeRow({ trade }: TradeRowProps) {
         {formatTimestamp(trade.timestamp)}
       </td>
       <td className="py-2 md:py-3 pr-3 md:pr-4 max-w-[200px] md:max-w-xs">
-        <span className="block text-xs md:text-sm leading-tight">
-          {trade.market_title || '-'}
-        </span>
+        {trade.market_slug ? (
+          <a
+            href={`https://polymarket.com/event/${trade.market_slug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block text-xs md:text-sm leading-tight hover:text-blue-600 hover:underline transition-colors"
+          >
+            {trade.market_title || trade.market_slug}
+          </a>
+        ) : (
+          <span className="block text-xs md:text-sm leading-tight">
+            {trade.market_title || '-'}
+          </span>
+        )}
       </td>
       <td className={`py-2 md:py-3 pr-3 md:pr-4 uppercase font-medium ${sideClass}`}>
         {trade.side || '-'}
