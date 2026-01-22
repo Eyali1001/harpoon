@@ -47,4 +47,11 @@ async def init_db():
         except Exception as e:
             logger.info(f"Side column migration skipped: {e}")
 
+        # Add market_slug column if it doesn't exist
+        try:
+            await conn.execute(text("ALTER TABLE trades ADD COLUMN market_slug VARCHAR(500)"))
+            logger.info("Added market_slug column")
+        except Exception as e:
+            logger.info(f"market_slug column migration skipped: {e}")
+
     logger.info("Database initialization complete")
