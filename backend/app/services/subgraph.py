@@ -251,10 +251,11 @@ async def fetch_profit_from_positions(address: str) -> dict:
     """Fetch realized and unrealized P/L from Polymarket positions API."""
     result = {"realized_pnl": 0.0, "unrealized_pnl": 0.0, "total_pnl": 0.0}
     address = address.lower()
+    position_count = 0
 
     async with httpx.AsyncClient() as client:
         offset = 0
-        while offset < 1000:  # Safety limit
+        while offset < 10000:  # Increased safety limit
             try:
                 response = await client.get(
                     "https://data-api.polymarket.com/positions",
@@ -263,15 +264,34 @@ async def fetch_profit_from_positions(address: str) -> dict:
                 )
 
                 if response.status_code != 200:
+                    logger.warning(f"Positions API returned {response.status_code}")
                     break
 
                 positions = response.json()
                 if not positions:
                     break
 
+                # Log first position to see available fields
+                if offset == 0 and positions:
+                    logger.info(f"Position fields: {list(positions[0].keys())}")
+                    logger.info(f"Sample position: {positions[0]}")
+
                 for pos in positions:
-                    result["realized_pnl"] += float(pos.get("realizedPnl", 0))
-                    result["unrealized_pnl"] += float(pos.get("cashPnl", 0))
+                    position_count += 1
+                    # realizedPnl is the P/L from closed positions
+                    realized = float(pos.get("realizedPnl") or 0)
+                    result["realized_pnl"] += realized
+
+                    # For unrealized P/L, calculate from current value vs initial value
+                    # Or use cashPnl if available
+                    size = float(pos.get("size") or 0)
+                    cur_price = float(pos.get("curPrice") or 0)
+                    avg_price = float(pos.get("avgPrice") or 0)
+
+                    # Unrealized = (current price - avg entry price) * position size
+                    if size > 0 and cur_price > 0 and avg_price > 0:
+                        unrealized = (cur_price - avg_price) * size
+                        result["unrealized_pnl"] += unrealized
 
                 if len(positions) < 100:
                     break
@@ -282,7 +302,7 @@ async def fetch_profit_from_positions(address: str) -> dict:
                 break
 
     result["total_pnl"] = result["realized_pnl"] + result["unrealized_pnl"]
-    logger.info(f"P/L for {address}: realized={result['realized_pnl']:.2f}, unrealized={result['unrealized_pnl']:.2f}")
+    logger.info(f"P/L for {address}: realized={result['realized_pnl']:.2f}, unrealized={result['unrealized_pnl']:.2f}, total={result['total_pnl']:.2f}, positions={position_count}")
     return result
 
 
