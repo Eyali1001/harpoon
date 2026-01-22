@@ -160,11 +160,14 @@ async def get_trades(
         try:
             new_trades = await fetch_trades_from_subgraph(address)
 
+            # Get all existing tx_hashes for this wallet to avoid duplicates
+            existing_hashes_result = await db.execute(
+                select(Trade.tx_hash).where(Trade.wallet_address == address)
+            )
+            existing_hashes = set(row[0] for row in existing_hashes_result.fetchall())
+
             for trade_data in new_trades:
-                existing = await db.execute(
-                    select(Trade).where(Trade.tx_hash == trade_data["tx_hash"])
-                )
-                if existing.scalar_one_or_none() is None:
+                if trade_data["tx_hash"] not in existing_hashes:
                     trade = Trade(
                         tx_hash=trade_data["tx_hash"],
                         wallet_address=address,
@@ -184,6 +187,7 @@ async def get_trades(
                         outcome_won=trade_data.get("outcome_won"),
                     )
                     db.add(trade)
+                    existing_hashes.add(trade_data["tx_hash"])  # Prevent duplicates within batch
 
             if cache_meta:
                 cache_meta.last_fetched = now
