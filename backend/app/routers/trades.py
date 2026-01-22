@@ -255,11 +255,7 @@ async def get_trades(
             profile_url=profile_data.get("profile_url"),
         )
 
-    # Fetch P/L from positions API (more accurate than trade-based calculation)
-    profit_data = await fetch_profit_from_positions(address)
-    total_earnings = profit_data["total_pnl"]
-
-    # Get all trades for analytics
+    # Get all trades for analytics and P/L calculation
     all_trades_result = await db.execute(
         select(
             Trade.side, Trade.amount, Trade.timestamp, Trade.tags,
@@ -270,39 +266,44 @@ async def get_trades(
 
     timestamps = []
     tag_counter = Counter()
-    tag_pnl = {}  # Track P/L per category (approximation based on trades)
 
     # Insider metrics tracking
     resolved_buy_trades = []  # (price, outcome_won, hours_before_close)
     trades_within_24h = 0
     trades_within_1h = 0
 
+    # Calculate total P/L from trades
+    # - Buys: cost = amount (spent)
+    # - Sells: received = amount
+    # - Winning buys: redemption = amount / price (tokens redeemed at $1)
+    realized_pnl = 0.0
+
     for side, amount, timestamp, tags, price, outcome, closed, close_time, outcome_won in all_trades_data:
         if timestamp:
             timestamps.append(timestamp)
 
         amt = float(amount) if amount else 0
-        trade_tags = []
+        trade_price = float(price) if price else 0
+
+        # Count tags
         if tags:
             for tag in tags.split(","):
                 tag = tag.strip()
                 if tag:
                     tag_counter[tag] += 1
-                    trade_tags.append(tag)
-                    if tag not in tag_pnl:
-                        tag_pnl[tag] = 0.0
 
-        # Calculate approximate P/L per trade for category breakdown
-        # (This is an approximation - actual P/L comes from positions API)
-        pnl = 0.0
+        # Calculate P/L
         if side == "buy":
-            pnl = -amt
-        elif side in ("sell", "redeem"):
-            pnl = amt
-
-        # Update P/L per category (approximation)
-        for tag in trade_tags:
-            tag_pnl[tag] += pnl
+            realized_pnl -= amt  # Cost of buying
+            # If this outcome won, count the redemption
+            if closed and outcome_won and trade_price > 0:
+                # Redemption = number of shares * $1 = (amount / price) * 1
+                shares = amt / trade_price
+                realized_pnl += shares  # Redemption payout
+        elif side == "sell":
+            realized_pnl += amt  # Received from selling
+        elif side == "redeem":
+            realized_pnl += amt  # Redemption payout
 
         # Track resolved buy trades for insider metrics
         if side == "buy" and closed and outcome_won is not None and price:
@@ -372,14 +373,22 @@ async def get_trades(
     # Calculate timezone analysis
     tz_analysis = calculate_timezone_analysis(timestamps)
 
-    # Calculate top categories with P/L
+    # Fetch unrealized P/L from positions API (for open positions)
+    profit_data = await fetch_profit_from_positions(address)
+    unrealized_pnl = profit_data["unrealized_pnl"]
+
+    # Total P/L = realized (from trades) + unrealized (from positions)
+    total_earnings = realized_pnl + unrealized_pnl
+    logger.info(f"P/L for {address}: realized={realized_pnl:.2f}, unrealized={unrealized_pnl:.2f}, total={total_earnings:.2f}")
+
+    # Calculate top categories (without P/L since we can't accurately track it)
     total_tag_count = sum(tag_counter.values())
     top_categories = [
         CategoryStat(
             name=tag,
             count=count,
             percentage=round((count / total_tag_count) * 100, 1) if total_tag_count > 0 else 0,
-            pnl=round(tag_pnl.get(tag, 0), 2)
+            pnl=None  # Can't accurately calculate without redemption tracking per category
         )
         for tag, count in tag_counter.most_common(10)
     ]
