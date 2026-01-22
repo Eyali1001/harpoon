@@ -259,14 +259,16 @@ async def get_trades(
             profile_url=profile_data.get("profile_url"),
         )
 
-    # Get all trades for analytics and P/L calculation
+    # Fetch P/L from positions API (most accurate source)
+    profit_data = await fetch_profit_from_positions(address)
+    total_earnings = profit_data["total_pnl"]
+
+    # Get all trades for analytics
     all_trades_result = await db.execute(
         select(
             Trade.side, Trade.amount, Trade.timestamp, Trade.tags,
-            Trade.price, Trade.outcome, Trade.closed, Trade.close_time, Trade.outcome_won,
-            Trade.token_id, Trade.market_id
+            Trade.price, Trade.outcome, Trade.closed, Trade.close_time, Trade.outcome_won
         ).where(Trade.wallet_address == address)
-        .order_by(Trade.timestamp)  # Process in chronological order
     )
     all_trades_data = all_trades_result.all()
 
@@ -278,18 +280,9 @@ async def get_trades(
     trades_within_24h = 0
     trades_within_1h = 0
 
-    # Track positions: key = token_id or (market_id, outcome), value = {shares, cost, closed, outcome_won}
-    positions = {}
-
-    # First pass: build position state from all trades
-    realized_pnl = 0.0
-
-    for side, amount, timestamp, tags, price, outcome, closed, close_time, outcome_won, token_id, market_id in all_trades_data:
+    for side, amount, timestamp, tags, price, outcome, closed, close_time, outcome_won in all_trades_data:
         if timestamp:
             timestamps.append(timestamp)
-
-        amt = float(amount) if amount else 0
-        trade_price = float(price) if price else 0
 
         # Count tags
         if tags:
@@ -298,45 +291,7 @@ async def get_trades(
                 if tag:
                     tag_counter[tag] += 1
 
-        # Create position key - prefer token_id, fall back to market_id + outcome
-        pos_key = token_id or f"{market_id}:{outcome}"
-        if pos_key not in positions:
-            positions[pos_key] = {"shares": 0, "cost": 0, "closed": False, "outcome_won": None}
-
-        # Update position based on trade
-        if side == "buy":
-            realized_pnl -= amt  # Cost of buying
-            if trade_price > 0:
-                shares = amt / trade_price
-                positions[pos_key]["shares"] += shares
-                positions[pos_key]["cost"] += amt
-            # Update resolution status
-            if closed:
-                positions[pos_key]["closed"] = True
-                positions[pos_key]["outcome_won"] = outcome_won
-        elif side == "sell":
-            realized_pnl += amt  # Received from selling
-            if trade_price > 0:
-                shares = amt / trade_price
-                positions[pos_key]["shares"] -= shares
-            # Update resolution status
-            if closed:
-                positions[pos_key]["closed"] = True
-                positions[pos_key]["outcome_won"] = outcome_won
-        elif side == "redeem":
-            realized_pnl += amt  # Explicit redemption
-            # Clear the position since it's been redeemed
-            positions[pos_key]["shares"] = 0
-
-    # Second pass: add redemptions for winning positions that still have shares
-    for pos_key, pos in positions.items():
-        if pos["closed"] and pos["outcome_won"] and pos["shares"] > 0:
-            # Redeem remaining shares at $1 each
-            realized_pnl += pos["shares"]
-            logger.debug(f"Inferred redemption for {pos_key}: {pos['shares']:.2f} shares")
-
-    # Third pass: track resolved buy trades for insider metrics
-    for side, amount, timestamp, tags, price, outcome, closed, close_time, outcome_won, token_id, market_id in all_trades_data:
+        # Track resolved buy trades for insider metrics
         if side == "buy" and closed and outcome_won is not None and price:
             hours_before = None
             if close_time and timestamp:
@@ -403,14 +358,6 @@ async def get_trades(
 
     # Calculate timezone analysis
     tz_analysis = calculate_timezone_analysis(timestamps)
-
-    # Fetch unrealized P/L from positions API (for open positions)
-    profit_data = await fetch_profit_from_positions(address)
-    unrealized_pnl = profit_data["unrealized_pnl"]
-
-    # Total P/L = realized (from trades) + unrealized (from positions)
-    total_earnings = realized_pnl + unrealized_pnl
-    logger.info(f"P/L for {address}: realized={realized_pnl:.2f}, unrealized={unrealized_pnl:.2f}, total={total_earnings:.2f}")
 
     # Calculate top categories (without P/L since we can't accurately track it)
     total_tag_count = sum(tag_counter.values())
