@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, Suspense, lazy } from 'react'
+import dynamic from 'next/dynamic'
 import SearchInput from '@/components/SearchInput'
 import TradeTable from '@/components/TradeTable'
 import ActivityHistogram from '@/components/ActivityHistogram'
@@ -9,6 +10,19 @@ import InsiderAnalytics from '@/components/InsiderAnalytics'
 import MetricsExplainer from '@/components/MetricsExplainer'
 import { fetchTrades, deleteTradesCache, clearAllData } from '@/lib/api'
 import type { Trade, ProfileInfo, TimezoneAnalysis, CategoryStat, InsiderMetrics } from '@/types/trade'
+
+// Lazy load the position history chart to not block page rendering
+const PositionHistory = dynamic(() => import('@/components/PositionHistory'), {
+  ssr: false,
+  loading: () => (
+    <div className="p-4 border border-beige-border bg-beige-light">
+      <h3 className="font-serif text-sm font-medium mb-3">Position History</h3>
+      <div className="h-64 flex items-center justify-center">
+        <p className="text-xs text-ink-muted">Loading chart...</p>
+      </div>
+    </div>
+  ),
+})
 
 export default function Home() {
   const [trades, setTrades] = useState<Trade[]>([])
@@ -179,11 +193,16 @@ export default function Home() {
                   {totalCount} trade{totalCount !== 1 ? 's' : ''}
                 </p>
                 {totalEarnings && (
-                  <p className={`text-base md:text-lg font-mono font-medium mt-2 ${
-                    parseFloat(totalEarnings) >= 0 ? 'text-green-700' : 'text-red-700'
-                  }`}>
-                    Total: {parseFloat(totalEarnings) >= 0 ? '+' : ''}${parseFloat(totalEarnings).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
+                  <div className="mt-2">
+                    <p className={`text-base md:text-lg font-mono font-medium ${
+                      parseFloat(totalEarnings) >= 0 ? 'text-green-700' : 'text-red-700'
+                    }`}>
+                      P/L: {parseFloat(totalEarnings) >= 0 ? '+' : ''}${parseFloat(totalEarnings).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-[10px] text-ink-muted">
+                      Current positions only (excludes historical closed positions)
+                    </p>
+                  </div>
                 )}
               </div>
             </div>
@@ -197,6 +216,11 @@ export default function Home() {
                 <MetricsExplainer />
               </div>
             )}
+
+            {/* Position History - loads async */}
+            <div className="mt-4">
+              <PositionHistory address={address} />
+            </div>
           </div>
 
           <TradeTable trades={trades} loading={loading} />
