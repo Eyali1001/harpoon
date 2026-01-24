@@ -216,6 +216,7 @@ export default function PositionHistory({ address }: PositionHistoryProps) {
                 fontSize: '10px',
                 padding: '6px',
               }}
+              itemSorter={(item) => -(item.value as number || 0)}
               formatter={(value, name) => {
                 if (typeof value !== 'number') return ['-', String(name)]
                 const market = markets.find((m) => m.key === name)
