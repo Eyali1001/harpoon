@@ -114,6 +114,10 @@ export default function PositionHistory({ address, marketFilter }: PositionHisto
     const marketSet = new Set<string>()
 
     for (const trade of sortedTrades) {
+      // Only include Yes/No markets
+      const outcome = trade.outcome?.toLowerCase()
+      if (outcome !== 'yes' && outcome !== 'no') continue
+
       const price = parseFloat(trade.price || '0')
       const amount = parseFloat(trade.amount || '0')
       if (price <= 0 || amount <= 0) continue
