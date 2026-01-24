@@ -94,9 +94,9 @@ export default function PositionHistory({ address, marketFilter }: PositionHisto
       return { chartData: [], markets: [] }
     }
 
-    // Filter trades by market if filter is set
+    // Filter trades by market if filter is set (using title since slugs can vary)
     const filteredTrades = marketFilter
-      ? trades.filter(t => t.market_slug === marketFilter)
+      ? trades.filter(t => t.market_title === marketFilter)
       : trades
 
     if (filteredTrades.length === 0) {
@@ -110,8 +110,10 @@ export default function PositionHistory({ address, marketFilter }: PositionHisto
 
     // Track position sizes per market
     const positions: Record<string, { shares: number; outcome: string; title: string }> = {}
-    const dataPoints: PositionPoint[] = []
     const marketSet = new Set<string>()
+
+    // First pass: process all trades to build position history with timestamps
+    const positionEvents: { timestamp: number; positions: Record<string, number> }[] = []
 
     for (const trade of sortedTrades) {
       // Only include Yes/No markets
@@ -123,7 +125,8 @@ export default function PositionHistory({ address, marketFilter }: PositionHisto
       if (price <= 0 || amount <= 0) continue
 
       const shares = amount / price
-      const marketKey = trade.market_slug || trade.market_id || 'unknown'
+      // Use market_title for grouping since slugs can vary for the same market
+      const marketKey = trade.market_title || trade.market_slug || trade.market_id || 'unknown'
       const posKey = `${marketKey}:${trade.outcome}`
 
       if (!positions[posKey]) {
@@ -140,26 +143,69 @@ export default function PositionHistory({ address, marketFilter }: PositionHisto
         positions[posKey].shares = Math.max(0, positions[posKey].shares - shares)
       }
 
-      // Only track markets with meaningful positions
+      // Track markets with meaningful positions
       if (positions[posKey].shares > 10) {
         marketSet.add(posKey)
       }
 
-      // Create data point with current state of all positions
+      // Record position snapshot at this timestamp
       const timestamp = new Date(trade.timestamp).getTime()
-      const date = new Date(trade.timestamp).toLocaleDateString('en-US', {
+      const posSnapshot: Record<string, number> = {}
+      for (const [key, pos] of Object.entries(positions)) {
+        posSnapshot[key] = pos.shares
+      }
+      positionEvents.push({ timestamp, positions: posSnapshot })
+    }
+
+    if (positionEvents.length === 0) {
+      return { chartData: [], markets: [] }
+    }
+
+    // Second pass: create daily data points for smoother chart
+    const firstTime = positionEvents[0].timestamp
+    const lastTime = positionEvents[positionEvents.length - 1].timestamp
+    const dayMs = 24 * 60 * 60 * 1000
+
+    // Determine interval based on time range
+    const timeRange = lastTime - firstTime
+    let intervalMs: number
+    if (timeRange < 7 * dayMs) {
+      // Less than a week: 4-hour intervals
+      intervalMs = 4 * 60 * 60 * 1000
+    } else if (timeRange < 30 * dayMs) {
+      // Less than a month: 12-hour intervals
+      intervalMs = 12 * 60 * 60 * 1000
+    } else if (timeRange < 90 * dayMs) {
+      // Less than 3 months: daily intervals
+      intervalMs = dayMs
+    } else {
+      // Longer: 2-day intervals
+      intervalMs = 2 * dayMs
+    }
+
+    const dataPoints: PositionPoint[] = []
+    let eventIndex = 0
+    let currentPositions: Record<string, number> = {}
+
+    // Generate points at regular intervals
+    for (let t = firstTime; t <= lastTime + intervalMs; t += intervalMs) {
+      // Update positions from any events before this time
+      while (eventIndex < positionEvents.length && positionEvents[eventIndex].timestamp <= t) {
+        currentPositions = { ...positionEvents[eventIndex].positions }
+        eventIndex++
+      }
+
+      const date = new Date(t).toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
       })
 
-      const point: PositionPoint = { timestamp, date }
+      const point: PositionPoint = { timestamp: t, date }
 
       // Add all tracked positions to this point
-      for (const [key, pos] of Object.entries(positions)) {
-        if (marketSet.has(key)) {
-          point[key] = Math.round(pos.shares)
-        }
-      }
+      Array.from(marketSet).forEach(key => {
+        point[key] = Math.round(currentPositions[key] || 0)
+      })
 
       dataPoints.push(point)
     }
@@ -206,7 +252,7 @@ export default function PositionHistory({ address, marketFilter }: PositionHisto
         Shares held over time (solid = Yes, dashed = No)
       </p>
 
-      <div className="h-48">
+      <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
             <XAxis

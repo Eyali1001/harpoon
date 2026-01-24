@@ -39,22 +39,69 @@ export default function Home() {
   const [selectedMarket, setSelectedMarket] = useState<string | null>(null)
   const [allTrades, setAllTrades] = useState<Trade[]>([]) // Store all trades for filtering
 
-  // Compute unique markets from trades
+  // Compute unique markets from trades - use title for grouping since slugs can vary
   const uniqueMarkets = useMemo(() => {
     const marketMap = new Map<string, string>()
     for (const trade of allTrades) {
-      if (trade.market_slug && trade.market_title) {
-        marketMap.set(trade.market_slug, trade.market_title)
+      if (trade.market_title) {
+        // Use title as the key (normalized for grouping)
+        if (!marketMap.has(trade.market_title)) {
+          marketMap.set(trade.market_title, trade.market_title)
+        }
       }
     }
-    return Array.from(marketMap.entries()).map(([slug, title]) => ({ slug, title }))
+    return Array.from(marketMap.keys()).map(title => ({ title }))
   }, [allTrades])
 
-  // Filter trades by selected market
+  // Filter trades by selected market - use allTrades when filtering to show all matches
   const filteredTrades = useMemo(() => {
     if (!selectedMarket) return trades
-    return trades.filter(t => t.market_slug === selectedMarket)
-  }, [trades, selectedMarket])
+    // When filtering, show all matching trades from allTrades (no pagination)
+    // Match by title since slugs can vary for the same market
+    return allTrades.filter(t => t.market_title === selectedMarket)
+  }, [trades, allTrades, selectedMarket])
+
+  // Calculate current position for selected market
+  const currentPosition = useMemo(() => {
+    if (!selectedMarket) return null
+
+    const marketTrades = allTrades.filter(t => t.market_title === selectedMarket)
+    if (marketTrades.length === 0) return null
+
+    // Sort by timestamp to process in order
+    const sorted = [...marketTrades].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    )
+
+    // Track shares per outcome
+    const positions: Record<string, number> = {}
+
+    for (const trade of sorted) {
+      const outcome = trade.outcome || 'Unknown'
+      const price = parseFloat(trade.price || '0')
+      const amount = parseFloat(trade.amount || '0')
+      if (price <= 0 || amount <= 0) continue
+
+      const shares = amount / price
+
+      if (!positions[outcome]) {
+        positions[outcome] = 0
+      }
+
+      if (trade.side === 'buy') {
+        positions[outcome] += shares
+      } else if (trade.side === 'sell') {
+        positions[outcome] = Math.max(0, positions[outcome] - shares)
+      }
+    }
+
+    // Filter out zero positions
+    const activePositions = Object.entries(positions)
+      .filter(([_, shares]) => shares > 0.5)
+      .map(([outcome, shares]) => ({ outcome, shares: Math.round(shares) }))
+
+    return activePositions.length > 0 ? activePositions : null
+  }, [allTrades, selectedMarket])
 
   const handleSearch = useCallback(async (input: string) => {
     setLoading(true)
@@ -129,6 +176,36 @@ export default function Home() {
       setError(err instanceof Error ? err.message : 'Failed to refresh')
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Load all trades when filtering by market
+  const handleMarketFilter = async (market: string | null) => {
+    setSelectedMarket(market)
+
+    // If selecting a market and we haven't loaded all trades, load them
+    if (market && allTrades.length < totalCount && address) {
+      setLoading(true)
+      try {
+        const allLoaded: Trade[] = [...allTrades]
+        const existingHashes = new Set(allLoaded.map(t => t.tx_hash))
+        let currentPage = Math.ceil(allTrades.length / 50) + 1
+
+        while (allLoaded.length < totalCount && currentPage <= 100) {
+          const response = await fetchTrades(address, currentPage)
+          const newTrades = response.trades.filter(t => !existingHashes.has(t.tx_hash))
+          newTrades.forEach(t => existingHashes.add(t.tx_hash))
+          allLoaded.push(...newTrades)
+          if (response.trades.length < 50) break
+          currentPage++
+        }
+
+        setAllTrades(allLoaded)
+      } catch (err) {
+        console.error('Failed to load all trades:', err)
+      } finally {
+        setLoading(false)
+      }
     }
   }
 
@@ -250,6 +327,42 @@ export default function Home() {
             <div className="mt-4">
               <PositionHistory address={address} marketFilter={selectedMarket} />
             </div>
+
+            {/* Current Position for Selected Market - Prominent Display */}
+            {selectedMarket && (
+              <div className="mt-4 p-4 border-2 border-ink bg-beige-light">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-serif text-sm font-medium mb-1">
+                      {selectedMarket.length > 60 ? selectedMarket.slice(0, 57) + '...' : selectedMarket}
+                    </h4>
+                    <p className="text-xs text-ink-muted font-mono">
+                      {filteredTrades.length} trade{filteredTrades.length !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    {currentPosition && currentPosition.length > 0 ? (
+                      <div>
+                        <p className="text-xs text-ink-muted mb-1">Current Position</p>
+                        {currentPosition.map((pos) => (
+                          <p key={pos.outcome} className={`text-lg font-mono font-bold ${
+                            pos.outcome.toLowerCase() === 'yes' ? 'text-green-700' :
+                            pos.outcome.toLowerCase() === 'no' ? 'text-red-700' : 'text-ink'
+                          }`}>
+                            {pos.shares.toLocaleString()} {pos.outcome}
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="text-xs text-ink-muted mb-1">Current Position</p>
+                        <p className="text-sm font-mono text-ink-muted">None (sold/redeemed)</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Market Filter */}
@@ -258,19 +371,20 @@ export default function Home() {
               <label className="text-xs font-mono text-ink-muted">Filter by market:</label>
               <select
                 value={selectedMarket || ''}
-                onChange={(e) => setSelectedMarket(e.target.value || null)}
-                className="px-2 py-1 text-xs font-mono bg-beige border border-beige-border focus:outline-none focus:border-ink"
+                onChange={(e) => handleMarketFilter(e.target.value || null)}
+                disabled={loading}
+                className="px-2 py-1 text-xs font-mono bg-beige border border-beige-border focus:outline-none focus:border-ink disabled:opacity-50"
               >
                 <option value="">All markets</option>
                 {uniqueMarkets.map(m => (
-                  <option key={m.slug} value={m.slug}>
+                  <option key={m.title} value={m.title}>
                     {m.title.length > 50 ? m.title.slice(0, 47) + '...' : m.title}
                   </option>
                 ))}
               </select>
               {selectedMarket && (
                 <button
-                  onClick={() => setSelectedMarket(null)}
+                  onClick={() => handleMarketFilter(null)}
                   className="text-xs font-mono text-ink-muted hover:text-ink"
                 >
                   Clear
@@ -281,7 +395,7 @@ export default function Home() {
 
           <TradeTable trades={filteredTrades} loading={loading} />
 
-          {totalPages > 1 && (
+          {totalPages > 1 && !selectedMarket && (
             <div className="mt-4 md:mt-6 flex items-center justify-center gap-2 md:gap-4 font-mono text-xs md:text-sm">
               <button
                 onClick={() => handlePageChange(page - 1)}
@@ -302,6 +416,7 @@ export default function Home() {
               </button>
             </div>
           )}
+
 
           <div className="mt-8 pt-4 border-t border-beige-border">
             <button
