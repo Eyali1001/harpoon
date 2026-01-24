@@ -1,0 +1,5 @@
+[phases.build]
+cmds = ["rm -rf .next || true", "npm run build"]
+
+[start]
+cmd = "npm run start"
