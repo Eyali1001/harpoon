@@ -463,7 +463,7 @@ async def fetch_trades_from_data_api(address: str) -> list[dict]:
                 "timestamp": timestamp,
                 "market_id": trade.get("conditionId") or market_slug,
                 "market_title": title,
-                "market_slug": market_slug,
+                "market_slug": event_slug or market_slug,  # Use event slug for Polymarket URLs
                 "outcome": outcome,
                 "side": side,
                 "amount": round(amount, 2),

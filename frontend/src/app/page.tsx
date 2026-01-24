@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, Suspense, lazy } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import SearchInput from '@/components/SearchInput'
 import TradeTable from '@/components/TradeTable'
@@ -36,6 +36,25 @@ export default function Home() {
   const [timezoneAnalysis, setTimezoneAnalysis] = useState<TimezoneAnalysis | null>(null)
   const [topCategories, setTopCategories] = useState<CategoryStat[]>([])
   const [insiderMetrics, setInsiderMetrics] = useState<InsiderMetrics | null>(null)
+  const [selectedMarket, setSelectedMarket] = useState<string | null>(null)
+  const [allTrades, setAllTrades] = useState<Trade[]>([]) // Store all trades for filtering
+
+  // Compute unique markets from trades
+  const uniqueMarkets = useMemo(() => {
+    const marketMap = new Map<string, string>()
+    for (const trade of allTrades) {
+      if (trade.market_slug && trade.market_title) {
+        marketMap.set(trade.market_slug, trade.market_title)
+      }
+    }
+    return Array.from(marketMap.entries()).map(([slug, title]) => ({ slug, title }))
+  }, [allTrades])
+
+  // Filter trades by selected market
+  const filteredTrades = useMemo(() => {
+    if (!selectedMarket) return trades
+    return trades.filter(t => t.market_slug === selectedMarket)
+  }, [trades, selectedMarket])
 
   const handleSearch = useCallback(async (input: string) => {
     setLoading(true)
@@ -46,10 +65,13 @@ export default function Home() {
     setTimezoneAnalysis(null)
     setTopCategories([])
     setInsiderMetrics(null)
+    setSelectedMarket(null)
+    setAllTrades([])
 
     try {
       const response = await fetchTrades(input, 1)
       setTrades(response.trades)
+      setAllTrades(response.trades)
       setAddress(response.address)
       setProfile(response.profile)
       setTotalCount(response.total_count)
@@ -60,6 +82,7 @@ export default function Home() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch trades')
       setTrades([])
+      setAllTrades([])
     } finally {
       setLoading(false)
     }
@@ -72,6 +95,12 @@ export default function Home() {
     try {
       const response = await fetchTrades(address, newPage)
       setTrades(response.trades)
+      setAllTrades(prev => {
+        // Merge new trades, avoiding duplicates
+        const existing = new Set(prev.map(t => t.tx_hash))
+        const newTrades = response.trades.filter(t => !existing.has(t.tx_hash))
+        return [...prev, ...newTrades]
+      })
       setPage(newPage)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch trades')
@@ -219,11 +248,38 @@ export default function Home() {
 
             {/* Position History - loads async */}
             <div className="mt-4">
-              <PositionHistory address={address} />
+              <PositionHistory address={address} marketFilter={selectedMarket} />
             </div>
           </div>
 
-          <TradeTable trades={trades} loading={loading} />
+          {/* Market Filter */}
+          {uniqueMarkets.length > 1 && (
+            <div className="mb-4 flex items-center gap-2">
+              <label className="text-xs font-mono text-ink-muted">Filter by market:</label>
+              <select
+                value={selectedMarket || ''}
+                onChange={(e) => setSelectedMarket(e.target.value || null)}
+                className="px-2 py-1 text-xs font-mono bg-beige border border-beige-border focus:outline-none focus:border-ink"
+              >
+                <option value="">All markets</option>
+                {uniqueMarkets.map(m => (
+                  <option key={m.slug} value={m.slug}>
+                    {m.title.length > 50 ? m.title.slice(0, 47) + '...' : m.title}
+                  </option>
+                ))}
+              </select>
+              {selectedMarket && (
+                <button
+                  onClick={() => setSelectedMarket(null)}
+                  className="text-xs font-mono text-ink-muted hover:text-ink"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
+
+          <TradeTable trades={filteredTrades} loading={loading} />
 
           {totalPages > 1 && (
             <div className="mt-4 md:mt-6 flex items-center justify-center gap-2 md:gap-4 font-mono text-xs md:text-sm">

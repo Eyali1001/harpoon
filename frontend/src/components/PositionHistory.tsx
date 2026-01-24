@@ -13,6 +13,7 @@ import type { Trade } from '@/types/trade'
 
 interface PositionHistoryProps {
   address: string
+  marketFilter?: string | null
 }
 
 interface PositionPoint {
@@ -44,7 +45,7 @@ function truncateTitle(title: string, maxLen: number = 30): string {
   return title.slice(0, maxLen - 3) + '...'
 }
 
-export default function PositionHistory({ address }: PositionHistoryProps) {
+export default function PositionHistory({ address, marketFilter }: PositionHistoryProps) {
   const [trades, setTrades] = useState<Trade[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -93,8 +94,17 @@ export default function PositionHistory({ address }: PositionHistoryProps) {
       return { chartData: [], markets: [] }
     }
 
+    // Filter trades by market if filter is set
+    const filteredTrades = marketFilter
+      ? trades.filter(t => t.market_slug === marketFilter)
+      : trades
+
+    if (filteredTrades.length === 0) {
+      return { chartData: [], markets: [] }
+    }
+
     // Sort trades by timestamp (oldest first)
-    const sortedTrades = [...trades].sort(
+    const sortedTrades = [...filteredTrades].sort(
       (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     )
 
@@ -161,7 +171,7 @@ export default function PositionHistory({ address }: PositionHistoryProps) {
     const topMarkets = marketsArray.slice(0, 6)
 
     return { chartData: dataPoints, markets: topMarkets }
-  }, [trades])
+  }, [trades, marketFilter])
 
   if (loading) {
     return (
